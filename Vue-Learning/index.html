@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=, initial-scale=1.0">
+    <title>Vue web</title>
+    <script src="https://unpkg.com/vue@3.0.2"></script>
+</head>
+<style>
+    .box{
+        padding: 100px 0;
+        width: 400px;
+        text-align: center;
+        background: #ddd;
+        margin: 20px;
+        display: inline-block;
+    }
+</style>
+<body>
+    <h1>Hello,vue :)</h1>
+
+    <div id="app">
+        <h2>Hello i am template within HTML now</h2> <!--this is hard coding can't receive change?-->
+    <div v-if = "showBooks">
+        <p>{{ title }}- {{ author }}  -{{ year }}</p>
+        <p>{{ publisher }}  Age: {{ age }} </p> <!-- This can allow dynamic-->
+    </div>
+        <button v-on:click="age++">Increase the age</button>
+         <button v-on:click="age--">Decrease the age</button>
+         <!-- <div @click = "title ='Great Controversy' ">Change Book title</div> -->
+            <!--// Also you can upadte the property inside this component, in components within JS files--> 
+            <!-- Invoke the function from js file -->
+             <div @click ="changeTitle">Change Book title</div>
+        
+        <button @click = 'toggleShowBooks'>
+            <span v-if="showBooks">Hide Books</span>
+            <!-- <span v-if="!showBooks">Show Books</span> -->
+            <!-- Also you can use else condition as v-else -->
+            <span v-else>Show Books</span>
+        </button>
+        <!-- Diplay over screen by using v-show directive -->
+         <div v-show="showBooks"> Currently Showing books</div>
+    
+    <br>
+    <!-- Handle Mouse Events -->
+        <div class="box" @mouseover="handleEvent">Mouseover (center)</div>
+        <div class="box" @mouseleave="handleEventleave">mouseleave</div>
+        <div class="box" @dblclick="handleEventDouble">Double click</div>
+        <div class="box" @mousemove="handleMouseMove">position - {{x}} {{y}}</div>
+        </div>
+    <script src ="app.js"></script>
+</body>
+</html>
