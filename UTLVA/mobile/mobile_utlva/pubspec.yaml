@@ -1,0 +1,39 @@
+name: mobile_utlva
+description: "UTLVA - University Timetable and Local Venue Arrangement"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # HTTP
+  http: ^1.2.2
+
+  # Secure storage for JWT tokens
+  flutter_secure_storage: ^9.2.2
+
+  # State management
+  provider: ^6.1.2
+
+  # Routing
+  go_router: ^14.6.2
+
+  # Local storage (non-sensitive)
+  shared_preferences: ^2.3.3
+
+  # Icons
+  material_design_icons_flutter: ^7.0.7296
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

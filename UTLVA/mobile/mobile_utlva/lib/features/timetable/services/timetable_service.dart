@@ -1,0 +1,152 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../../core/config/app_config.dart';
+import '../../../features/auth/services/auth_service.dart';
+import '../models/timetable_entry.dart';
+import '../models/generation_result.dart';
+import '../models/timetable_conflict.dart';
+
+class TimetableService {
+  final AuthService _auth = AuthService();
+
+  Future<Map<String, String>> _headers() async {
+    final token = await _auth.accessToken;
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  String get _base => '${AppConfig.baseUrl}/api/timetable';
+
+  Future<List<TimetableEntry>> _getList(String url) async {
+    final r = await http.get(Uri.parse(url), headers: await _headers())
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) {
+      final data = jsonDecode(r.body);
+      final list = data is List ? data : (data['results'] ?? data);
+      return (list as List)
+          .map((e) => TimetableEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception('Failed to load timetable: ${r.statusCode}');
+  }
+
+  // ── Coordinator: full CRUD ─────────────────────────────────────────────────
+
+  Future<List<TimetableEntry>> getEntries({
+    int? academicYearId,
+    int? semesterId,
+    int? programmeId,
+    int? studentGroupId,
+    String? status,
+  }) {
+    final params = <String>[];
+    if (academicYearId != null) params.add('academic_year=$academicYearId');
+    if (semesterId != null) params.add('semester=$semesterId');
+    if (programmeId != null) params.add('programme=$programmeId');
+    if (studentGroupId != null) params.add('student_group=$studentGroupId');
+    if (status != null) params.add('status=$status');
+    final q = params.isNotEmpty ? '?${params.join('&')}' : '';
+    return _getList('$_base/entries/$q');
+  }
+
+  Future<TimetableEntry> createEntry(TimetableEntry e) async {
+    final r = await http
+        .post(Uri.parse('$_base/entries/'), headers: await _headers(), body: jsonEncode(e.toJson()))
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode == 201) return TimetableEntry.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+    throw Exception(jsonDecode(r.body).toString());
+  }
+
+  Future<TimetableEntry> updateEntry(TimetableEntry e) async {
+    final r = await http
+        .put(Uri.parse('$_base/entries/${e.id}/'), headers: await _headers(), body: jsonEncode(e.toJson()))
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) return TimetableEntry.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+    throw Exception(jsonDecode(r.body).toString());
+  }
+
+  Future<void> deleteEntry(int id) async {
+    final r = await http.delete(Uri.parse('$_base/entries/$id/'), headers: await _headers())
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode != 204) throw Exception('Delete failed: ${r.statusCode}');
+  }
+
+  // ── Lecturer: my timetable ─────────────────────────────────────────────────
+
+  Future<List<TimetableEntry>> getLecturerTimetable({int? academicYearId, int? semesterId}) {
+    final params = <String>[];
+    if (academicYearId != null) params.add('academic_year=$academicYearId');
+    if (semesterId != null) params.add('semester=$semesterId');
+    final q = params.isNotEmpty ? '?${params.join('&')}' : '';
+    return _getList('$_base/entries/my-lecturer-timetable/$q');
+  }
+
+  // ── Student: timetable by programme + group ────────────────────────────────
+
+  Future<List<TimetableEntry>> getStudentTimetable({
+    required int programmeId,
+    int? studentGroupId,
+    int? academicYearId,
+    int? semesterId,
+  }) {
+    final params = ['programme=$programmeId'];
+    if (studentGroupId != null) params.add('student_group=$studentGroupId');
+    if (academicYearId != null) params.add('academic_year=$academicYearId');
+    if (semesterId != null) params.add('semester=$semesterId');
+    return _getList('$_base/entries/my-student-timetable/?${params.join('&')}');
+  }
+
+  // ── Timetable Generation ───────────────────────────────────────────────────
+
+  /// Triggers the automatic timetable generator for the given semester.
+  /// Returns a [GenerationResult] with generated/failed counts and details.
+  Future<GenerationResult> generateTimetable({
+    required int academicYearId,
+    required int semesterId,
+    required int programmeId,
+    bool dryRun = false,
+  }) async {
+    final body = {
+      'academic_year': academicYearId,
+      'semester': semesterId,
+      'programme': programmeId,
+      'dry_run': dryRun,
+    };
+    final r = await http
+        .post(
+          Uri.parse('${AppConfig.baseUrl}/api/timetable/generate/'),
+          headers: await _headers(),
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 120)); // generation can take time
+
+    if (r.statusCode == 200) {
+      return GenerationResult.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+    }
+    throw Exception(jsonDecode(r.body).toString());
+  }
+
+  // ── Conflict Validation ────────────────────────────────────────────────────
+
+  /// Runs the conflict detection engine for the given semester.
+  /// Returns a [ValidationResult] with status PASSED or FAILED, conflict
+  /// counts by type, and full conflict details.
+  Future<ValidationResult> validateTimetable({
+    required int academicYearId,
+    required int semesterId,
+  }) async {
+    final r = await http
+        .post(
+          Uri.parse('${AppConfig.baseUrl}/api/timetable/validate/'),
+          headers: await _headers(),
+          body: jsonEncode({'academic_year': academicYearId, 'semester': semesterId}),
+        )
+        .timeout(const Duration(seconds: 60));
+    if (r.statusCode == 200) {
+      return ValidationResult.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+    }
+    throw Exception(jsonDecode(r.body).toString());
+  }
+}
