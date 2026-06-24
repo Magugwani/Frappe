@@ -101,6 +101,11 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
         title: 'Timetable Management',
         extraActions: [
           IconButton(
+            icon: const Icon(Icons.fact_check_outlined, color: AppColors.textOnPrimary),
+            tooltip: 'Validate Timetable',
+            onPressed: () => context.push('/timetable/validate'),
+          ),
+          IconButton(
             icon: const Icon(Icons.auto_fix_high, color: AppColors.textOnPrimary),
             tooltip: 'Auto-Generate Timetable',
             onPressed: () => context.push('/timetable/generate'),

@@ -76,6 +76,22 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
             ]),
           ),
           const SizedBox(height: 10),
+          // Phase 6 — Validate Timetable
+          ReusableCard(
+            onTap: () => context.push('/timetable/validate'),
+            backgroundColor: AppColors.statusFree,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(children: [
+              const Icon(Icons.fact_check_outlined, color: AppColors.textOnPrimary, size: 26),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Validate Timetable', style: AppTypography.titleMedium.copyWith(color: AppColors.textOnPrimary)),
+                Text('Detect venue, lecturer and group conflicts', style: AppTypography.caption.copyWith(color: AppColors.textOnPrimary.withAlpha(200))),
+              ])),
+              const Icon(Icons.chevron_right, color: AppColors.textOnPrimary),
+            ]),
+          ),
+          const SizedBox(height: 10),
           // Phase 3 — Timetable shortcut
           ReusableCard(
             onTap: () => context.push('/timetable/coordinator'),
