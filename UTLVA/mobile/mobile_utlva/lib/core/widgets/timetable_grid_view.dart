@@ -139,16 +139,24 @@ class TimetableGridView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ROOT CAUSE FIX 1 & 2:
+    // This widget is frequently placed inside SingleChildScrollView → Column,
+    // which gives it UNBOUNDED height. A Column with mainAxisSize.max in
+    // unbounded space has no finite size → "Cannot hit test a render box with
+    // no size". Fix: use mainAxisSize.min so the column takes only the space
+    // its children need, which is always finite (day rows have fixed heights).
     if (entries.isEmpty && _visibleDays.isEmpty) {
       return _buildEmptyState();
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min, // FIX: never expand into unbounded space
       children: [
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               _buildHeader(),
               const Divider(height: 1, thickness: 1, color: AppColors.divider),
@@ -308,18 +316,21 @@ class TimetableGridView extends StatelessWidget {
   // ── Empty state ───────────────────────────────────────────────────────────
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.calendar_month_outlined, size: 48, color: AppColors.textSecondary),
-            const SizedBox(height: 10),
-            Text('No timetable entries to display.',
-                style: AppTypography.bodySmall),
-          ],
-        ),
+    // ROOT CAUSE FIX 2:
+    // Center() requires BOUNDED constraints to center its child. When placed
+    // inside SingleChildScrollView the height is unbounded → Center fails.
+    // Use a Column with crossAxisAlignment.center instead — it sizes to its
+    // content (always finite) and never needs bounded parent constraints.
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.calendar_month_outlined, size: 48, color: AppColors.textSecondary),
+          const SizedBox(height: 10),
+          Text('No timetable entries to display.', style: AppTypography.bodySmall),
+        ],
       ),
     );
   }

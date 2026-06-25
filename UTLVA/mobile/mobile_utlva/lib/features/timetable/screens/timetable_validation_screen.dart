@@ -62,14 +62,15 @@ class _TimetableValidationScreenState extends State<TimetableValidationScreen> {
         academicYearId: _selectedYear!.id,
         semesterId: _selectedSemester!.id,
       );
-      if (mounted) setState(() { _result = result; _loading = false; });
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       if (mounted) {
-        setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Validation failed: $e'), backgroundColor: AppColors.error),
         );
       }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 

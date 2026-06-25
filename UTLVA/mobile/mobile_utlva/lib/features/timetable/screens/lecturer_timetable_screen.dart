@@ -37,8 +37,10 @@ class _LecturerTimetableScreenState extends State<LecturerTimetableScreen> {
       final refs = await Future.wait([_acService.getYears(), _acService.getSemesters()]);
       _years = refs[0] as List<AcademicYear>;
       _semesters = refs[1] as List<Semester>;
-      if (_years.isNotEmpty) _selectedYear = _years.first;
-      if (_semesters.isNotEmpty) _selectedSemester = _semesters.first;
+      if (mounted) setState(() {
+        if (_years.isNotEmpty) _selectedYear = _years.first;
+        if (_semesters.isNotEmpty) _selectedSemester = _semesters.first;
+      });
       await _loadEntries();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -46,14 +48,19 @@ class _LecturerTimetableScreenState extends State<LecturerTimetableScreen> {
   }
 
   Future<void> _loadEntries() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
-      _entries = await _ttService.getLecturerTimetable(
+      final entries = await _ttService.getLecturerTimetable(
         academicYearId: _selectedYear?.id,
         semesterId: _selectedSemester?.id,
       );
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _entries = entries);
+    } catch (_) {
+      if (mounted) setState(() => _entries = []);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override

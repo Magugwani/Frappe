@@ -102,14 +102,7 @@ class GenerateRequestSerializer(serializers.Serializer):
 
 
 class ValidateRequestSerializer(serializers.Serializer):
-    """
-    Request body for POST /api/timetable/validate/
-
-    Fields
-    ------
-    academic_year   int   required
-    semester        int   required
-    """
+    """Request body for POST /api/timetable/validate/"""
     academic_year = serializers.PrimaryKeyRelatedField(queryset=AcademicYear.objects.all())
     semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
 
@@ -119,3 +112,17 @@ class ValidateRequestSerializer(serializers.Serializer):
                 {'semester': 'Semester does not belong to the selected academic year.'}
             )
         return data
+
+
+# Reuse same shape for publish + status requests
+PublishRequestSerializer = ValidateRequestSerializer
+StatusRequestSerializer = ValidateRequestSerializer
+
+
+class ConflictResolveSerializer(serializers.Serializer):
+    """Request body for POST /api/timetable/conflicts/{id}/resolve/"""
+    resolution_note = serializers.CharField(
+        max_length=1000,
+        allow_blank=False,
+        help_text='Describe how the conflict was resolved.',
+    )

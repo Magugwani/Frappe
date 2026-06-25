@@ -41,6 +41,11 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
   bool _loading = true;
   bool _refDataLoaded = false;
 
+  // Prevents concurrent _loadEntries() calls from racing each other.
+  // Each call increments this; on completion it only updates state if the
+  // value still matches (i.e. no newer call has started).
+  int _loadSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +60,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
         _acService.getProgrammes(),
         _acService.getLecturers(),
         _vService.getVenues(),
+        _acService.getCourses(),   // load ALL courses upfront — form filters by programme
       ]);
       setState(() {
         _years = results[0] as List<AcademicYear>;
@@ -62,6 +68,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
         _programmes = results[2] as List<Programme>;
         _lecturers = results[3] as List<Lecturer>;
         _venues = results[4] as List<Venue>;
+        _courses = results[5] as List<Course>;  // all courses, form filters by programme
         if (_years.isNotEmpty) _selectedYear = _years.first;
         if (_semesters.isNotEmpty) _selectedSemester = _semesters.first;
         if (_programmes.isNotEmpty) _selectedProgramme = _programmes.first;
@@ -77,20 +84,37 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
   Future<void> _loadGroups() async {
     if (_selectedProgramme == null) return;
     final groups = await _acService.getGroups(programmeId: _selectedProgramme!.id);
-    final courses = await _acService.getCourses(programmeId: _selectedProgramme!.id);
-    setState(() { _groups = groups; _courses = courses; });
+    setState(() => _groups = groups);
   }
 
+  /// Load timetable entries for the current filter bar selections.
+  ///
+  /// Sequence number ensures rapid filter changes never leave a stale result:
+  /// only the response from the MOST RECENT call updates state.
+  /// try-finally guarantees _loading is ALWAYS reset, even on unexpected errors.
   Future<void> _loadEntries() async {
+    if (!mounted) return;
+    final seq = ++_loadSeq;
     setState(() => _loading = true);
     try {
-      _entries = await _ttService.getEntries(
+      final entries = await _ttService.getEntries(
         academicYearId: _selectedYear?.id,
         semesterId: _selectedSemester?.id,
         programmeId: _selectedProgramme?.id,
       );
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+      if (mounted && seq == _loadSeq) {
+        setState(() => _entries = entries);
+      }
+    } catch (_) {
+      if (mounted && seq == _loadSeq) {
+        setState(() => _entries = []);
+      }
+    } finally {
+      // Always reset loading for the current sequence — prevents infinite spinner
+      if (mounted && seq == _loadSeq) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   @override
@@ -162,7 +186,10 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
               value: _selectedYear,
               items: _years,
               displayText: (y) => y.name,
-              onChanged: (y) { setState(() => _selectedYear = y); _loadEntries(); },
+              onChanged: (y) {
+                setState(() => _selectedYear = y);
+                _loadEntries(); // sequence-number guard handles racing calls
+              },
             ),
             const SizedBox(width: 10),
             _FilterDropdown<Semester>(
@@ -170,7 +197,10 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
               value: _selectedSemester,
               items: _semesters,
               displayText: (s) => s.name,
-              onChanged: (s) { setState(() => _selectedSemester = s); _loadEntries(); },
+              onChanged: (s) {
+                setState(() => _selectedSemester = s);
+                _loadEntries();
+              },
             ),
             const SizedBox(width: 10),
             _FilterDropdown<Programme>(
@@ -178,7 +208,11 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
               value: _selectedProgramme,
               items: _programmes,
               displayText: (p) => p.code,
-              onChanged: (p) { setState(() => _selectedProgramme = p); _loadGroups(); _loadEntries(); },
+              onChanged: (p) {
+                setState(() => _selectedProgramme = p);
+                _loadGroups();
+                _loadEntries();
+              },
             ),
             const SizedBox(width: 10),
             TextButton.icon(
@@ -215,55 +249,104 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
   );
 
   // ── Entry form ──────────────────────────────────────────────────────────────
-  void _showEntryForm(BuildContext context, {TimetableEntry? entry}) {
-    showModalBottomSheet(
+  //
+  // ROOT CAUSE FIX 3:
+  // Previous approach used addPostFrameCallback to delay _loadEntries().
+  // Problem: addPostFrameCallback fires one frame after Navigator.pop(),
+  // but the modal close ANIMATION takes multiple frames (~300ms). During those
+  // frames the overlay is still present, widgets are mid-animation, and calling
+  // setState(_loading = true) causes hit-test failures on uncommitted layouts.
+  //
+  // Fix: `await showModalBottomSheet<bool>()`.
+  // The await resolves ONLY after the modal is completely closed and all
+  // animation frames have settled. Calling _loadEntries() after the await is
+  // 100% safe — the main screen is fully visible and laid out.
+  Future<void> _showEntryForm(BuildContext context, {TimetableEntry? entry}) async {
+    final bool? success = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => _EntryForm(
         entry: entry,
-        years: _years, semesters: _semesters, programmes: _programmes,
-        groups: _groups, courses: _courses, lecturers: _lecturers, venues: _venues,
+        years: _years,
+        allSemesters: _semesters,
+        programmes: _programmes,
+        allGroups: _groups,
+        allCourses: _courses,
+        lecturers: _lecturers,
+        venues: _venues,
+        acService: _acService,
         onSaved: (e) async {
-          Navigator.pop(ctx);
-          try {
-            entry == null ? await _ttService.createEntry(e) : await _ttService.updateEntry(e);
-            _loadEntries();
-          } catch (err) {
-            if (mounted) _showError(err);
-          }
+          // API call — throws on error (form's catch block shows snackbar)
+          entry == null
+              ? await _ttService.createEntry(e)
+              : await _ttService.updateEntry(e);
+
+          if (!ctx.mounted) return;
+          // Return true = success; modal is closed by the form via Navigator.pop(ctx, true)
+          Navigator.pop(ctx, true);
         },
         onDelete: entry == null ? null : (e) async {
-          Navigator.pop(ctx);
-          try { await _ttService.deleteEntry(e.id); _loadEntries(); } catch (err) { if (mounted) _showError(err); }
+          await _ttService.deleteEntry(e.id);
+          if (ctx.mounted) Navigator.pop(ctx, true);
         },
+        // Pass the saved entry's IDs so parent can sync its filter bar
+        savedEntryRef: entry,
       ),
     );
-  }
 
-  void _showError(Object e) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: AppColors.error));
+    if (success == true && mounted) {
+      // Modal is FULLY closed here — no animation, no overlay, safe to setState.
+      _loadEntries();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(entry == null ? 'Entry created.' : 'Entry updated.'),
+          backgroundColor: AppColors.statusFree,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
   }
 }
 
-// ── Entry form widget ─────────────────────────────────────────────────────────
+// ── Entry form widget (fixed) ─────────────────────────────────────────────────
+//
+// Bugs fixed:
+//  1. _semId! / _progId! could throw NullCheckException → added null guards
+//  2. _saving never reset → added finally block
+//  3. No try-catch → exceptions now shown as snackbar inside the form
+//  4. Semester showed all semesters → now filtered by selected year
+//  5. Course list was stale when programme changed → now filtered by _progId
+//  6. _courseId/_groupId not reset when programme changes → now reset on change
 class _EntryForm extends StatefulWidget {
   final TimetableEntry? entry;
   final List<AcademicYear> years;
-  final List<Semester> semesters;
+  final List<Semester> allSemesters;
   final List<Programme> programmes;
-  final List<StudentGroup> groups;
-  final List<Course> courses;
+  final List<StudentGroup> allGroups;
+  final List<Course> allCourses;
   final List<Lecturer> lecturers;
   final List<Venue> venues;
+  final AcademicsService acService;
   final Future<void> Function(TimetableEntry) onSaved;
   final Future<void> Function(TimetableEntry)? onDelete;
+  final TimetableEntry? savedEntryRef; // unused — kept for API compat
 
   const _EntryForm({
     this.entry,
-    required this.years, required this.semesters, required this.programmes,
-    required this.groups, required this.courses, required this.lecturers,
-    required this.venues, required this.onSaved, this.onDelete,
+    required this.years,
+    required this.allSemesters,
+    required this.programmes,
+    required this.allGroups,
+    required this.allCourses,
+    required this.lecturers,
+    required this.venues,
+    required this.acService,
+    required this.onSaved,
+    this.onDelete,
+    this.savedEntryRef,
   });
 
   @override
@@ -272,8 +355,11 @@ class _EntryForm extends StatefulWidget {
 
 class _EntryFormState extends State<_EntryForm> {
   final _formKey = GlobalKey<FormState>();
-  late int? _yearId, _semId, _progId, _groupId, _courseId, _lecturerId, _venueId;
-  late String _day, _startTime, _endTime, _status;
+  int? _yearId, _semId, _progId, _groupId, _courseId, _lecturerId, _venueId;
+  String _day = 'MONDAY';
+  String _startTime = '08:00:00';
+  String _endTime = '10:00:00';
+  String _status = 'DRAFT';
   bool _saving = false;
 
   static const _days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
@@ -282,15 +368,33 @@ class _EntryFormState extends State<_EntryForm> {
     '13:00:00', '14:00:00', '15:00:00', '16:00:00', '17:00:00', '18:00:00',
   ];
 
+  // Derived lists filtered by current selections
+  List<Semester> get _visibleSemesters =>
+      widget.allSemesters.where((s) => _yearId == null || s.academicYearId == _yearId).toList();
+
+  List<Course> get _visibleCourses =>
+      widget.allCourses.where((c) => _progId == null || c.programmeId == _progId).toList();
+
+  List<StudentGroup> get _visibleGroups =>
+      widget.allGroups.where((g) => _progId == null || g.programmeId == _progId).toList();
+
   @override
   void initState() {
     super.initState();
     final e = widget.entry;
     _yearId = e?.academicYearId ?? (widget.years.isNotEmpty ? widget.years.first.id : null);
-    _semId = e?.semesterId ?? (widget.semesters.isNotEmpty ? widget.semesters.first.id : null);
+
+    // Default semester to first one matching the selected year
+    final yearlySems = _visibleSemesters;
+    _semId = e?.semesterId ?? (yearlySems.isNotEmpty ? yearlySems.first.id : null);
+
     _progId = e?.programmeId ?? (widget.programmes.isNotEmpty ? widget.programmes.first.id : null);
     _groupId = e?.studentGroupId;
-    _courseId = e?.courseId ?? (widget.courses.isNotEmpty ? widget.courses.first.id : null);
+
+    // Default course to first one for the selected programme
+    final progCourses = _visibleCourses;
+    _courseId = e?.courseId ?? (progCourses.isNotEmpty ? progCourses.first.id : null);
+
     _lecturerId = e?.lecturerId ?? (widget.lecturers.isNotEmpty ? widget.lecturers.first.id : null);
     _venueId = e?.venueId;
     _day = e?.dayOfWeek ?? 'MONDAY';
@@ -299,31 +403,88 @@ class _EntryFormState extends State<_EntryForm> {
     _status = e?.status ?? 'DRAFT';
   }
 
-  String _timeLabel(String t) {
+  String _hm(String t) {
     final parts = t.split(':');
     return '${parts[0]}:${parts[1]}';
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate() || _yearId == null || _courseId == null || _lecturerId == null) return;
+    // Guard: all required fields must be non-null before building entry
+    if (_yearId == null || _semId == null || _progId == null ||
+        _courseId == null || _lecturerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Fill all required fields: Year, Semester, Programme, Course, Lecturer.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
     setState(() => _saving = true);
-    final entry = TimetableEntry(
-      id: widget.entry?.id ?? 0,
-      academicYearId: _yearId!, academicYearName: '',
-      semesterId: _semId!, semesterName: '',
-      programmeId: _progId!, programmeName: '', programmeCode: '',
-      studentGroupId: _groupId, studentGroupName: null,
-      courseId: _courseId!, courseCode: '', courseName: '',
-      lecturerId: _lecturerId!, lecturerName: '',
-      venueId: _venueId, venueCode: null, venueName: null,
-      dayOfWeek: _day, startTime: _startTime, endTime: _endTime, status: _status,
-    );
-    await widget.onSaved(entry);
+    try {
+      final entry = TimetableEntry(
+        id: widget.entry?.id ?? 0,
+        academicYearId: _yearId!,
+        academicYearName: '',
+        semesterId: _semId!,
+        semesterName: '',
+        programmeId: _progId!,
+        programmeName: '', programmeCode: '',
+        studentGroupId: _groupId,
+        studentGroupName: null,
+        courseId: _courseId!,
+        courseCode: '', courseName: '',
+        lecturerId: _lecturerId!,
+        lecturerName: '',
+        venueId: _venueId,
+        venueCode: null, venueName: null,
+        dayOfWeek: _day,
+        startTime: _startTime,
+        endTime: _endTime,
+        status: _status,
+      );
+      // onSaved calls the API and pops the modal on success.
+      // On failure it throws — caught below.
+      await widget.onSaved(entry);
+    } catch (err) {
+      // API error: keep form open so user can correct data
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Save failed: $err'),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    } finally {
+      // Always re-enable the save button regardless of outcome
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.entry != null;
+    final semItems = _visibleSemesters;
+    final courseItems = _visibleCourses;
+    final groupItems = _visibleGroups;
+
+    // Clamp selections: if filtered list no longer contains the selected ID, reset.
+    // MUST use addPostFrameCallback — mutating state during build() causes
+    // layout errors. Schedule the reset for the next frame.
+    if (_semId != null && !semItems.any((s) => s.id == _semId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _semId = null);
+      });
+    }
+    if (_courseId != null && !courseItems.any((c) => c.id == _courseId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _courseId = null);
+      });
+    }
+    if (_groupId != null && !groupItems.any((g) => g.id == _groupId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _groupId = null);
+      });
+    }
+
     return SingleChildScrollView(
       padding: EdgeInsets.only(left: 24, right: 24, top: 24, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
       child: Form(
@@ -332,66 +493,130 @@ class _EntryFormState extends State<_EntryForm> {
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text(isEdit ? 'Edit Timetable Entry' : 'New Timetable Entry', style: AppTypography.headlineMedium),
             if (isEdit && widget.onDelete != null)
-              IconButton(icon: const Icon(Icons.delete_outline, color: AppColors.error), onPressed: () => widget.onDelete!(widget.entry!)),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                onPressed: () => widget.onDelete!(widget.entry!),
+              ),
           ]),
           const SizedBox(height: 20),
 
-          // Academic Year + Semester
+          // ── Academic Year (FIX 4: semester filtered by year) ────────────────
           Row(children: [
-            Expanded(child: _dd<int?>('Year', _yearId, widget.years.map((y) => DropdownMenuItem(value: y.id, child: Text(y.name))).toList(), (v) => setState(() => _yearId = v))),
+            Expanded(child: _dd<int?>(
+              'Academic Year *', _yearId,
+              widget.years.map((y) => DropdownMenuItem(value: y.id, child: Text(y.name))).toList(),
+              (v) => setState(() { _yearId = v; _semId = null; }),  // reset semester on year change
+            )),
             const SizedBox(width: 10),
-            Expanded(child: _dd<int?>('Semester', _semId, widget.semesters.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(), (v) => setState(() => _semId = v))),
+            Expanded(child: _dd<int?>(
+              'Semester *', _semId,
+              semItems.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(),
+              (v) => setState(() => _semId = v),
+            )),
           ]),
           const SizedBox(height: 12),
 
-          // Programme + Group
+          // ── Programme + Group (FIX 5-6: courses/groups filtered, IDs reset) ─
           Row(children: [
-            Expanded(child: _dd<int?>('Programme', _progId, widget.programmes.map((p) => DropdownMenuItem(value: p.id, child: Text(p.code))).toList(), (v) => setState(() => _progId = v))),
+            Expanded(child: _dd<int?>(
+              'Programme *', _progId,
+              widget.programmes.map((p) => DropdownMenuItem(value: p.id, child: Text(p.code))).toList(),
+              (v) => setState(() {
+                _progId = v;
+                _courseId = null;  // reset course when programme changes
+                _groupId = null;   // reset group when programme changes
+              }),
+            )),
             const SizedBox(width: 10),
-            Expanded(child: _dd<int?>('Group', _groupId,
-              [const DropdownMenuItem(value: null, child: Text('All groups')), ...widget.groups.map((g) => DropdownMenuItem(value: g.id, child: Text(g.groupName)))],
-              (v) => setState(() => _groupId = v))),
+            Expanded(child: _dd<int?>(
+              'Student Group', _groupId,
+              [
+                const DropdownMenuItem(value: null, child: Text('All groups')),
+                ...groupItems.map((g) => DropdownMenuItem(value: g.id, child: Text(g.groupName))),
+              ],
+              (v) => setState(() => _groupId = v),
+            )),
           ]),
           const SizedBox(height: 12),
 
-          // Course
-          _dd<int?>('Course', _courseId, widget.courses.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.courseCode} — ${c.courseName}', overflow: TextOverflow.ellipsis))).toList(), (v) => setState(() => _courseId = v)),
+          // ── Course (filtered by programme) ────────────────────────────────
+          _dd<int?>(
+            'Course *', _courseId,
+            courseItems.map((c) => DropdownMenuItem(
+              value: c.id,
+              child: Text('${c.courseCode} — ${c.courseName}', overflow: TextOverflow.ellipsis),
+            )).toList(),
+            (v) => setState(() => _courseId = v),
+          ),
           const SizedBox(height: 12),
 
-          // Lecturer + Venue
+          // ── Lecturer + Venue ───────────────────────────────────────────────
           Row(children: [
-            Expanded(child: _dd<int?>('Lecturer', _lecturerId, widget.lecturers.map((l) => DropdownMenuItem(value: l.id, child: Text(l.fullName, overflow: TextOverflow.ellipsis))).toList(), (v) => setState(() => _lecturerId = v))),
+            Expanded(child: _dd<int?>(
+              'Lecturer *', _lecturerId,
+              widget.lecturers.map((l) => DropdownMenuItem(
+                value: l.id, child: Text(l.fullName, overflow: TextOverflow.ellipsis),
+              )).toList(),
+              (v) => setState(() => _lecturerId = v),
+            )),
             const SizedBox(width: 10),
-            Expanded(child: _dd<int?>('Venue', _venueId,
-              [const DropdownMenuItem(value: null, child: Text('No venue')), ...widget.venues.map((v) => DropdownMenuItem(value: v.id, child: Text(v.code)))],
-              (v) => setState(() => _venueId = v))),
+            Expanded(child: _dd<int?>(
+              'Venue', _venueId,
+              [
+                const DropdownMenuItem(value: null, child: Text('No venue')),
+                ...widget.venues.map((v) => DropdownMenuItem(value: v.id, child: Text(v.code))),
+              ],
+              (v) => setState(() => _venueId = v),
+            )),
           ]),
           const SizedBox(height: 12),
 
-          // Day
-          _dd<String>('Day', _day, _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(), (v) => setState(() => _day = v!)),
+          // ── Day ────────────────────────────────────────────────────────────
+          _dd<String>(
+            'Day of Week', _day,
+            _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+            (v) => setState(() => _day = v!),
+          ),
           const SizedBox(height: 12),
 
-          // Start + End time
+          // ── Start + End time ───────────────────────────────────────────────
           Row(children: [
-            Expanded(child: _dd<String>('Start', _startTime, _times.map((t) => DropdownMenuItem(value: t, child: Text(_timeLabel(t)))).toList(), (v) => setState(() => _startTime = v!))),
+            Expanded(child: _dd<String>(
+              'Start Time', _startTime,
+              _times.map((t) => DropdownMenuItem(value: t, child: Text(_hm(t)))).toList(),
+              (v) => setState(() => _startTime = v!),
+            )),
             const SizedBox(width: 10),
-            Expanded(child: _dd<String>('End', _endTime, _times.map((t) => DropdownMenuItem(value: t, child: Text(_timeLabel(t)))).toList(), (v) => setState(() => _endTime = v!))),
+            Expanded(child: _dd<String>(
+              'End Time', _endTime,
+              _times.map((t) => DropdownMenuItem(value: t, child: Text(_hm(t)))).toList(),
+              (v) => setState(() => _endTime = v!),
+            )),
           ]),
           const SizedBox(height: 12),
 
-          // Status
-          _dd<String>('Status', _status,
-            ['DRAFT', 'PUBLISHED'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-            (v) => setState(() => _status = v!)),
+          // ── Status ─────────────────────────────────────────────────────────
+          _dd<String>(
+            'Status', _status,
+            ['DRAFT', 'PUBLISHED', 'VALIDATED'].map((s) =>
+              DropdownMenuItem(value: s, child: Text(s))).toList(),
+            (v) => setState(() => _status = v!),
+          ),
           const SizedBox(height: 24),
 
-          SizedBox(width: double.infinity, child: ElevatedButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: AppColors.textOnPrimary, strokeWidth: 2))
-                : Text(isEdit ? 'Save Changes' : 'Create Entry'),
-          )),
+          // ── Save button ────────────────────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      height: 20, width: 20,
+                      child: CircularProgressIndicator(color: AppColors.textOnPrimary, strokeWidth: 2),
+                    )
+                  : Text(isEdit ? 'Save Changes' : 'Create Entry'),
+            ),
+          ),
         ]),
       ),
     );

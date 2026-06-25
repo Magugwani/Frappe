@@ -15,12 +15,12 @@ class DayOfWeek(models.TextChoices):
 
 class TimetableStatus(models.TextChoices):
     DRAFT = 'DRAFT', 'Draft'
-    VALIDATED = 'VALIDATED', 'Validated'   # Phase 6: passed conflict check
+    VALIDATED = 'VALIDATED', 'Validated'
     PUBLISHED = 'PUBLISHED', 'Published'
+    ARCHIVED = 'ARCHIVED', 'Archived'   # Phase 7: future-ready
 
 
 class TimetableEntry(models.Model):
-    # Academic context
     academic_year = models.ForeignKey(
         AcademicYear, on_delete=models.CASCADE, related_name='timetable_entries'
     )
@@ -34,8 +34,6 @@ class TimetableEntry(models.Model):
         StudentGroup, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='timetable_entries'
     )
-
-    # Teaching assignment
     course = models.ForeignKey(
         Course, on_delete=models.CASCADE, related_name='timetable_entries'
     )
@@ -46,19 +44,13 @@ class TimetableEntry(models.Model):
         Venue, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='timetable_entries'
     )
-
-    # Scheduling
     day_of_week = models.CharField(max_length=10, choices=DayOfWeek.choices)
-    date = models.DateField(null=True, blank=True)  # optional specific date override
+    date = models.DateField(null=True, blank=True)
     start_time = models.TimeField()
     end_time = models.TimeField()
-
-    # Lifecycle: DRAFT → VALIDATED → PUBLISHED
     status = models.CharField(
         max_length=20, choices=TimetableStatus.choices, default=TimetableStatus.DRAFT
     )
-
-    # Audit
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='created_timetable_entries'
@@ -71,10 +63,7 @@ class TimetableEntry(models.Model):
         ordering = ['day_of_week', 'start_time']
 
     def __str__(self):
-        return (
-            f'{self.course.course_code} | {self.day_of_week} '
-            f'{self.start_time}-{self.end_time} | {self.status}'
-        )
+        return f'{self.course.course_code} | {self.day_of_week} {self.start_time}-{self.end_time} | {self.status}'
 
     @property
     def duration_minutes(self):
@@ -84,14 +73,6 @@ class TimetableEntry(models.Model):
 
 
 class TimetableConflict(models.Model):
-    """
-    Records a detected conflict between two TimetableEntry objects.
-
-    Conflicts are (re)created each time the validation engine runs.
-    OPEN conflicts block promotion to VALIDATED.
-    RESOLVED conflicts are kept for audit purposes.
-    """
-
     class ConflictType(models.TextChoices):
         VENUE = 'VENUE_CONFLICT', 'Venue Conflict'
         LECTURER = 'LECTURER_CONFLICT', 'Lecturer Conflict'
@@ -112,6 +93,13 @@ class TimetableConflict(models.Model):
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.OPEN
     )
+    # Phase 7: conflict resolution tracking
+    resolved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='resolved_conflicts'
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -119,4 +107,35 @@ class TimetableConflict(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f'{self.conflict_type} | {self.timetable_entry_a} ↔ {self.timetable_entry_b}'
+        return f'{self.conflict_type} | {self.status}'
+
+
+class TimetablePublication(models.Model):
+    """Records each time a timetable is published for a semester."""
+
+    class PubStatus(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Active'
+        SUPERSEDED = 'SUPERSEDED', 'Superseded'  # replaced by a newer publication
+
+    academic_year = models.ForeignKey(
+        AcademicYear, on_delete=models.CASCADE, related_name='publications'
+    )
+    semester = models.ForeignKey(
+        Semester, on_delete=models.CASCADE, related_name='publications'
+    )
+    published_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='published_timetables'
+    )
+    published_at = models.DateTimeField(auto_now_add=True)
+    published_entries_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=20, choices=PubStatus.choices, default=PubStatus.ACTIVE
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'timetable_publications'
+        ordering = ['-published_at']
+
+    def __str__(self):
+        return f'{self.academic_year.name} {self.semester.name} — published by {self.published_by} at {self.published_at}'

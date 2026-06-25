@@ -60,6 +60,22 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
           const SizedBox(height: 28),
           _buildStatsRow(),
           const SizedBox(height: 16),
+          // Phase 7 — Publish Timetable
+          ReusableCard(
+            onTap: () => context.push('/timetable/publish'),
+            backgroundColor: AppColors.statusBooked,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(children: [
+              const Icon(Icons.publish_outlined, color: AppColors.textOnPrimary, size: 26),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Publish Timetable', style: AppTypography.titleMedium.copyWith(color: AppColors.textOnPrimary)),
+                Text('Manage lifecycle: Draft → Validated → Published', style: AppTypography.caption.copyWith(color: AppColors.textOnPrimary.withAlpha(200))),
+              ])),
+              const Icon(Icons.chevron_right, color: AppColors.textOnPrimary),
+            ]),
+          ),
+          const SizedBox(height: 10),
           // Phase 5 — Auto-Generate Timetable
           ReusableCard(
             onTap: () => context.push('/timetable/generate'),

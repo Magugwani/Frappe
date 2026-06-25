@@ -5,6 +5,7 @@ import '../../../features/auth/services/auth_service.dart';
 import '../models/timetable_entry.dart';
 import '../models/generation_result.dart';
 import '../models/timetable_conflict.dart';
+import '../models/timetable_lifecycle.dart';
 
 class TimetableService {
   final AuthService _auth = AuthService();
@@ -148,5 +149,73 @@ class TimetableService {
       return ValidationResult.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
     }
     throw Exception(jsonDecode(r.body).toString());
+  }
+
+  // ── Lifecycle — Status / Publish / Unpublish ───────────────────────────────
+
+  Future<TimetableStatusInfo> getTimetableStatus({
+    required int academicYearId,
+    required int semesterId,
+  }) async {
+    final r = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/api/timetable/status/?academic_year=$academicYearId&semester=$semesterId'),
+      headers: await _headers(),
+    ).timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) {
+      return TimetableStatusInfo.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+    }
+    throw Exception(jsonDecode(r.body).toString());
+  }
+
+  Future<PublishResult> publishTimetable({
+    required int academicYearId,
+    required int semesterId,
+  }) async {
+    final r = await http.post(
+      Uri.parse('${AppConfig.baseUrl}/api/timetable/publish/'),
+      headers: await _headers(),
+      body: jsonEncode({'academic_year': academicYearId, 'semester': semesterId}),
+    ).timeout(const Duration(seconds: 30));
+    final body = jsonDecode(r.body) as Map<String, dynamic>;
+    return PublishResult.fromJson(body);
+  }
+
+  Future<Map<String, dynamic>> unpublishTimetable({
+    required int academicYearId,
+    required int semesterId,
+  }) async {
+    final r = await http.post(
+      Uri.parse('${AppConfig.baseUrl}/api/timetable/unpublish/'),
+      headers: await _headers(),
+      body: jsonEncode({'academic_year': academicYearId, 'semester': semesterId}),
+    ).timeout(const Duration(seconds: 30));
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  // ── Conflict management ────────────────────────────────────────────────────
+
+  Future<List<ConflictItem>> getConflicts({
+    required int semesterId,
+    String? status,
+  }) async {
+    final params = 'semester=$semesterId${status != null ? '&status=$status' : ''}';
+    final r = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/api/timetable/conflicts/?$params'),
+      headers: await _headers(),
+    ).timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) {
+      final list = jsonDecode(r.body) as List;
+      return list.map((e) => ConflictItem.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    throw Exception(jsonDecode(r.body).toString());
+  }
+
+  Future<Map<String, dynamic>> resolveConflict(int conflictId, String resolutionNote) async {
+    final r = await http.post(
+      Uri.parse('${AppConfig.baseUrl}/api/timetable/conflicts/$conflictId/resolve/'),
+      headers: await _headers(),
+      body: jsonEncode({'resolution_note': resolutionNote}),
+    ).timeout(const Duration(seconds: 15));
+    return jsonDecode(r.body) as Map<String, dynamic>;
   }
 }

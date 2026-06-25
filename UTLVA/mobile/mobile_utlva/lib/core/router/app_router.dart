@@ -13,6 +13,8 @@ import '../../features/timetable/screens/lecturer_timetable_screen.dart';
 import '../../features/timetable/screens/student_timetable_screen.dart';
 import '../../features/timetable/screens/timetable_generation_screen.dart';
 import '../../features/timetable/screens/timetable_validation_screen.dart';
+import '../../features/timetable/screens/timetable_publishing_screen.dart';
+import '../../features/timetable/screens/conflict_resolution_screen.dart';
 import '../../features/academics/screens/academic_year_screen.dart';
 import '../../features/academics/screens/teaching_period_screen.dart';
 import '../../features/academics/screens/semester_screen.dart';
@@ -96,6 +98,8 @@ class AppRouter {
         GoRoute(path: '/timetable/coordinator', builder: (context, state) => const CoordinatorTimetableScreen()),
         GoRoute(path: '/timetable/generate', builder: (context, state) => const TimetableGenerationScreen()),
         GoRoute(path: '/timetable/validate', builder: (context, state) => const TimetableValidationScreen()),
+        GoRoute(path: '/timetable/publish', builder: (context, state) => const TimetablePublishingScreen()),
+        GoRoute(path: '/timetable/conflicts', builder: (context, state) => const ConflictResolutionScreen()),
         GoRoute(path: '/timetable/lecturer', builder: (context, state) => const LecturerTimetableScreen()),
         GoRoute(path: '/timetable/student', builder: (context, state) => const StudentTimetableScreen()),
         // Phase 2 — Academic setup routes (Coordinator + Admin)

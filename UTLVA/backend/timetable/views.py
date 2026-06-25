@@ -6,10 +6,18 @@ from rest_framework.views import APIView
 from accounts.permissions import IsAdminOrCoordinatorOrReadOnly, IsSystemAdminOrCoordinator
 from accounts.models import Role
 from academics.models import Lecturer
-from .models import TimetableEntry
-from .serializers import TimetableEntrySerializer, GenerateRequestSerializer, ValidateRequestSerializer
+from .models import TimetableEntry, TimetableConflict, TimetableStatus
+from .serializers import (
+    TimetableEntrySerializer, GenerateRequestSerializer,
+    ValidateRequestSerializer, PublishRequestSerializer,
+    StatusRequestSerializer, ConflictResolveSerializer,
+)
 from .generator import TimetableGenerator
 from .services.validator import TimetableValidationService
+from .services.publisher import (
+    get_timetable_status, publish_timetable,
+    unpublish_timetable, resolve_conflict,
+)
 
 
 class TimetableEntryViewSet(viewsets.ModelViewSet):
@@ -62,15 +70,16 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
         qs = TimetableEntry.objects.select_related(
             'academic_year', 'semester', 'programme', 'student_group',
             'course', 'lecturer__user', 'venue',
-        ).filter(lecturer=lecturer)
+        ).filter(
+            lecturer=lecturer,
+            status=TimetableStatus.PUBLISHED,   # Lecturers see only PUBLISHED entries
+        )
 
         p = request.query_params
         if p.get('academic_year'):
             qs = qs.filter(academic_year_id=p['academic_year'])
         if p.get('semester'):
             qs = qs.filter(semester_id=p['semester'])
-        if p.get('status'):
-            qs = qs.filter(status=p['status'])
 
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
@@ -203,3 +212,124 @@ class TimetableValidateView(APIView):
         )
         result = validator.validate()
         return Response(result.to_dict(), status=status.HTTP_200_OK)
+
+
+class TimetableStatusView(APIView):
+    """
+    GET /api/timetable/status/?academic_year=1&semester=1
+
+    Returns current lifecycle state of the timetable for the semester.
+    All authenticated roles can query this.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        s = StatusRequestSerializer(data=request.query_params)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = s.validated_data
+        result = get_timetable_status(data['academic_year'], data['semester'])
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class TimetablePublishView(APIView):
+    """
+    POST /api/timetable/publish/
+
+    Promotes all VALIDATED entries → PUBLISHED.
+    Rejected if any OPEN conflicts exist.
+    Permission: SYSTEM_ADMIN or COORDINATOR.
+    """
+    permission_classes = [IsSystemAdminOrCoordinator]
+
+    def post(self, request):
+        s = PublishRequestSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = s.validated_data
+        result = publish_timetable(data['academic_year'], data['semester'], request.user)
+        http_status = status.HTTP_200_OK if result['success'] else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return Response(result, status=http_status)
+
+
+class TimetableUnpublishView(APIView):
+    """
+    POST /api/timetable/unpublish/
+
+    Reverts PUBLISHED → VALIDATED.
+    Only SYSTEM_ADMIN.
+    """
+    permission_classes = [IsSystemAdminOrCoordinator]
+
+    def post(self, request):
+        s = PublishRequestSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = s.validated_data
+        result = unpublish_timetable(data['semester'], request.user)
+        http_status = status.HTTP_200_OK if result['success'] else status.HTTP_403_FORBIDDEN
+        return Response(result, status=http_status)
+
+
+class ConflictResolveView(APIView):
+    """
+    POST /api/timetable/conflicts/{id}/resolve/
+
+    Marks a specific conflict as RESOLVED with a resolution note.
+    Permission: SYSTEM_ADMIN or COORDINATOR.
+    """
+    permission_classes = [IsSystemAdminOrCoordinator]
+
+    def post(self, request, pk):
+        s = ConflictResolveSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        result = resolve_conflict(pk, request.user, s.validated_data['resolution_note'])
+        http_status = status.HTTP_200_OK if result['success'] else status.HTTP_404_NOT_FOUND
+        return Response(result, status=http_status)
+
+
+class ConflictListView(APIView):
+    """
+    GET /api/timetable/conflicts/?academic_year=1&semester=1&status=OPEN
+
+    Lists conflicts for a semester. Used by Conflict Resolution screen.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = TimetableConflict.objects.select_related(
+            'timetable_entry_a__course', 'timetable_entry_b__course',
+            'resolved_by',
+        ).all()
+        if request.query_params.get('semester'):
+            qs = qs.filter(timetable_entry_a__semester_id=request.query_params['semester'])
+        if request.query_params.get('status'):
+            qs = qs.filter(status=request.query_params['status'])
+        data = [
+            {
+                'id': c.id,
+                'conflict_type': c.conflict_type,
+                'type_display': c.get_conflict_type_display(),
+                'message': c.message,
+                'status': c.status,
+                'entry_a': {
+                    'id': c.timetable_entry_a_id,
+                    'course': c.timetable_entry_a.course.course_code,
+                    'day': c.timetable_entry_a.day_of_week,
+                    'time': f'{c.timetable_entry_a.start_time.strftime("%H:%M")}–{c.timetable_entry_a.end_time.strftime("%H:%M")}',
+                },
+                'entry_b': {
+                    'id': c.timetable_entry_b_id,
+                    'course': c.timetable_entry_b.course.course_code,
+                    'day': c.timetable_entry_b.day_of_week,
+                    'time': f'{c.timetable_entry_b.start_time.strftime("%H:%M")}–{c.timetable_entry_b.end_time.strftime("%H:%M")}',
+                },
+                'resolved_by': c.resolved_by.full_name if c.resolved_by else None,
+                'resolved_at': str(c.resolved_at) if c.resolved_at else None,
+                'resolution_note': c.resolution_note,
+                'created_at': str(c.created_at),
+            }
+            for c in qs
+        ]
+        return Response(data)

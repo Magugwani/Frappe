@@ -88,15 +88,20 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
 
   Future<void> _fetchTimetable() async {
     if (_selectedProgrammeId == null) return;
+    if (!mounted) return;
     setState(() { _loading = true; _searched = true; });
     try {
-      _entries = await _ttService.getStudentTimetable(
+      final entries = await _ttService.getStudentTimetable(
         programmeId: _selectedProgrammeId!,
         studentGroupId: _selectedGroupId,
         semesterId: _selectedSemester?.id,
       );
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _entries = entries);
+    } catch (_) {
+      if (mounted) setState(() => _entries = []);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
