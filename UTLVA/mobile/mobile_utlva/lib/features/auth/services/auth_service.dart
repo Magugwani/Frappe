@@ -205,7 +205,34 @@ class AuthService {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  Future<String?> get accessToken => _safeRead(_keyAccess);
+  /// Returns a valid access token, transparently refreshing it when it is
+  /// expired or within 60 seconds of expiry.  Every API service calls this
+  /// before attaching the Bearer header — no service needs its own retry logic.
+  Future<String?> get accessToken async {
+    final stored = await _safeRead(_keyAccess);
+    if (stored == null) return null;
+    if (_isExpiredOrNearExpiry(stored)) {
+      debugPrint('[AUTH] Access token expiring — refreshing silently');
+      return _refreshAccessToken();
+    }
+    return stored;
+  }
+
+  /// Decode the JWT payload and return true if the token expires within 60 s.
+  static bool _isExpiredOrNearExpiry(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return true;
+      final padded = base64.normalize(parts[1]);
+      final payload = jsonDecode(utf8.decode(base64.decode(padded))) as Map;
+      final exp = payload['exp'];
+      if (exp == null) return true;
+      final expiry = DateTime.fromMillisecondsSinceEpoch((exp as int) * 1000);
+      return DateTime.now().isAfter(expiry.subtract(const Duration(seconds: 60)));
+    } catch (_) {
+      return false; // if we can't decode, let the server decide
+    }
+  }
 
   Future<void> _clearTokens() async {
     await _safeDelete(_keyAccess);

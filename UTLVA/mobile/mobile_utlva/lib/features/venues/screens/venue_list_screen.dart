@@ -191,7 +191,11 @@ class _VenueListScreenState extends State<VenueListScreen> {
             child: TextField(
               controller: _minCapCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Min cap', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+              decoration: const InputDecoration(
+                hintText: 'Min',
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              ),
               onSubmitted: (_) => _search(),
             ),
           ),
@@ -201,7 +205,11 @@ class _VenueListScreenState extends State<VenueListScreen> {
             child: TextField(
               controller: _maxCapCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Max cap', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+              decoration: const InputDecoration(
+                hintText: 'Max',
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              ),
               onSubmitted: (_) => _search(),
             ),
           ),

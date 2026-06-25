@@ -23,11 +23,19 @@ class _VenueScreenState extends State<VenueScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final r = await Future.wait([_service.getVenues(), _service.getBuildings()]);
-      _items = r[0] as List<Venue>;
-      _buildings = r[1] as List<Building>;
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+      // Load independently so a venues error never blocks the buildings dropdown.
+      final results = await Future.wait([
+        _service.getVenues().catchError((_) => <Venue>[]),
+        _service.getBuildings().catchError((_) => <Building>[]),
+      ]);
+      if (mounted) {
+        _items     = results[0] as List<Venue>;
+        _buildings = results[1] as List<Building>;
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Color _statusColor(String status) => switch (status) {

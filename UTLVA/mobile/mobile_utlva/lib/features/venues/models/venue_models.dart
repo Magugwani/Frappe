@@ -73,7 +73,7 @@ class Venue {
         id: j['id'],
         code: j['code'],
         name: j['name'],
-        buildingId: j['building'],
+        buildingId: j['building_id'] ?? j['building'],
         buildingName: j['building_name'] ?? '',
         floor: j['floor'] ?? 0,
         capacity: j['capacity'],
