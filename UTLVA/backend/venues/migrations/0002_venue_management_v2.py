@@ -24,14 +24,28 @@ class Migration(migrations.Migration):
 
     operations = [
         # ── Building ───────────────────────────────────────────────────────
-        migrations.AddField(
-            model_name='building',
-            name='code',
-            field=models.CharField(
-                blank=True, max_length=20, null=True, unique=True,
-                help_text='Short code, e.g. "COICT", "ECT", "LIB-A". '
-                          'Used as the human-readable identifier on the map.',
-            ),
+        # `code` may already exist on a populated DB (added by a now-deleted
+        # hotfix migration). SeparateDatabaseAndState lets Django track the
+        # model state change while using IF NOT EXISTS so it never crashes.
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.AddField(
+                    model_name='building',
+                    name='code',
+                    field=models.CharField(
+                        blank=True, max_length=20, null=True, unique=True,
+                        help_text='Short code, e.g. "COICT", "ECT", "LIB-A". '
+                                  'Used as the human-readable identifier on the map.',
+                    ),
+                ),
+            ],
+            database_operations=[
+                migrations.RunSQL(
+                    sql='ALTER TABLE buildings ADD COLUMN IF NOT EXISTS '
+                        'code VARCHAR(20) NULL;',
+                    reverse_sql='ALTER TABLE buildings DROP COLUMN IF EXISTS code;',
+                ),
+            ],
         ),
         migrations.AddField(
             model_name='building',
@@ -138,6 +152,13 @@ class Migration(migrations.Migration):
         ),
 
         # ── VenueStatusHistory ─────────────────────────────────────────────
+        # Drop the Phase-8 venue_status_history table (old schema: old_status,
+        # changed_by_id, timetable_entry_id) so this migration can create the
+        # authoritative schema with triggered_by_event and full audit fields.
+        migrations.RunSQL(
+            sql='DROP TABLE IF EXISTS venue_status_history CASCADE;',
+            reverse_sql=migrations.RunSQL.noop,
+        ),
         migrations.CreateModel(
             name='VenueStatusHistory',
             fields=[
