@@ -9,6 +9,7 @@ from .views import (
     TimetableUnpublishView,
     ConflictResolveView,
     ConflictListView,
+    VenueRecommendationView,
 )
 
 router = DefaultRouter()
@@ -22,4 +23,6 @@ urlpatterns = router.urls + [
     path('unpublish/', TimetableUnpublishView.as_view(), name='timetable-unpublish'),
     path('conflicts/', ConflictListView.as_view(), name='conflict-list'),
     path('conflicts/<int:pk>/resolve/', ConflictResolveView.as_view(), name='conflict-resolve'),
+    # Phase 8: venue recommendations
+    path('venue-recommendations/', VenueRecommendationView.as_view(), name='venue-recommendations'),
 ]

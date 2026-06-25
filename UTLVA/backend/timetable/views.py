@@ -1,16 +1,21 @@
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
-from accounts.permissions import IsAdminOrCoordinatorOrReadOnly, IsSystemAdminOrCoordinator
+from accounts.permissions import IsAdminOrCoordinatorOrReadOnly, IsSystemAdminOrCoordinator, IsSystemAdmin
 from accounts.models import Role
 from academics.models import Lecturer
-from .models import TimetableEntry, TimetableConflict, TimetableStatus
+from .models import TimetableEntry, TimetableConflict, TimetableStatus, EmergencySession, SystemConfiguration
 from .serializers import (
     TimetableEntrySerializer, GenerateRequestSerializer,
     ValidateRequestSerializer, PublishRequestSerializer,
     StatusRequestSerializer, ConflictResolveSerializer,
+    VenueRecommendationRequestSerializer,
+    EmergencySessionSerializer, EmergencySessionCreateSerializer,
+    EmergencySessionReviewSerializer,
+    SystemConfigSerializer, SystemConfigUpdateSerializer,
 )
 from .generator import TimetableGenerator
 from .services.validator import TimetableValidationService
@@ -18,6 +23,8 @@ from .services.publisher import (
     get_timetable_status, publish_timetable,
     unpublish_timetable, resolve_conflict,
 )
+from .services.venue_recommender import VenueRecommendationService
+from .services.emergency_service import EmergencySessionService
 
 
 class TimetableEntryViewSet(viewsets.ModelViewSet):
@@ -333,3 +340,164 @@ class ConflictListView(APIView):
             for c in qs
         ]
         return Response(data)
+
+
+# ── Phase 8: Venue Recommendation ─────────────────────────────────────────────
+
+class VenueRecommendationView(APIView):
+    """
+    POST /api/timetable/venue-recommendations/
+
+    Returns up to 3 suitable venues for the given student count and slot.
+    Permission: any authenticated user (coordinators and lecturers use this).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        s = VenueRecommendationRequestSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = s.validated_data
+        semester = data.get('semester')
+        service = VenueRecommendationService(
+            students_count=data['students_count'],
+            day_of_week=data['day_of_week'],
+            start_time=data['start_time'],
+            end_time=data['end_time'],
+            venue_type=data.get('venue_type'),
+            required_resources=data.get('required_resources', []),
+            semester_id=semester.pk if semester else None,
+        )
+        result = service.recommend()
+        return Response(result, status=status.HTTP_200_OK)
+
+
+# ── Phase 8: Emergency Session ────────────────────────────────────────────────
+
+class EmergencySessionViewSet(viewsets.ViewSet):
+    """
+    GET  /api/sessions/emergency/          — list sessions
+    POST /api/sessions/emergency/          — create (Lecturer or Coordinator)
+    GET  /api/sessions/emergency/{id}/     — retrieve single
+    POST /api/sessions/emergency/{id}/approve/ — Coordinator/Admin
+    POST /api/sessions/emergency/{id}/reject/  — Coordinator/Admin
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _get_object_or_404(self, pk):
+        try:
+            return EmergencySession.objects.select_related(
+                'course', 'lecturer__user', 'venue', 'requested_by', 'reviewed_by',
+            ).get(pk=pk)
+        except EmergencySession.DoesNotExist:
+            return None
+
+    def list(self, request):
+        qs = EmergencySession.objects.select_related(
+            'course', 'lecturer__user', 'venue', 'requested_by', 'reviewed_by',
+        ).all()
+
+        # Coordinators and admins see all; lecturers see only their own requests
+        if request.user.role == Role.LECTURER:
+            qs = qs.filter(requested_by=request.user)
+
+        # Optional filters
+        p = request.query_params
+        if p.get('status'):
+            qs = qs.filter(status=p['status'])
+
+        serializer = EmergencySessionSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        session = self._get_object_or_404(pk)
+        if session is None:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        # Lecturers can only see their own
+        if request.user.role == Role.LECTURER and session.requested_by != request.user:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = EmergencySessionSerializer(session)
+        return Response(serializer.data)
+
+    def create(self, request):
+        s = EmergencySessionCreateSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = s.validated_data
+        service = EmergencySessionService(
+            course_id=data['course'].pk,
+            lecturer_id=data['lecturer'].pk,
+            requested_date=data['requested_date'],
+            day_of_week=data['day_of_week'],
+            start_time=data['start_time'],
+            end_time=data['end_time'],
+            reason=data['reason'],
+            requested_by_user=request.user,
+            venue_id=data['venue'].pk if data.get('venue') else None,
+            student_group_ids=[g.pk for g in data.get('student_groups', [])],
+        )
+        session = service.check_and_create()
+        out = EmergencySessionSerializer(session)
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='approve',
+            permission_classes=[IsSystemAdminOrCoordinator])
+    def approve(self, request, pk=None):
+        session = self._get_object_or_404(pk)
+        if session is None:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if session.status != EmergencySession.Status.PENDING:
+            return Response(
+                {'detail': f'Cannot approve a session with status {session.status}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        s = EmergencySessionReviewSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        updated = EmergencySessionService.approve(session, request.user, s.validated_data['note'])
+        return Response(EmergencySessionSerializer(updated).data)
+
+    @action(detail=True, methods=['post'], url_path='reject',
+            permission_classes=[IsSystemAdminOrCoordinator])
+    def reject(self, request, pk=None):
+        session = self._get_object_or_404(pk)
+        if session is None:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if session.status != EmergencySession.Status.PENDING:
+            return Response(
+                {'detail': f'Cannot reject a session with status {session.status}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        s = EmergencySessionReviewSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        updated = EmergencySessionService.reject(session, request.user, s.validated_data['note'])
+        return Response(EmergencySessionSerializer(updated).data)
+
+
+# ── Phase 8: System Configuration ─────────────────────────────────────────────
+
+class SystemConfigView(APIView):
+    """
+    GET  /api/system/config/ — all authenticated users (read capacity_overhead)
+    PATCH /api/system/config/ — Admin only
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        config = SystemConfiguration.get()
+        return Response(SystemConfigSerializer(config).data)
+
+    def patch(self, request):
+        if request.user.role != Role.SYSTEM_ADMIN:
+            return Response({'detail': 'Admin only.'}, status=status.HTTP_403_FORBIDDEN)
+        s = SystemConfigUpdateSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        config = SystemConfiguration.get()
+        config.capacity_overhead = s.validated_data['capacity_overhead']
+        config.updated_by = request.user
+        config.save()
+        return Response(SystemConfigSerializer(config).data)

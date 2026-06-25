@@ -30,6 +30,13 @@ dependencies:
   # Icons
   material_design_icons_flutter: ^7.0.7296
 
+  # Map (OpenStreetMap — no API key required)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.0
+
+  # External navigation / URL actions
+  url_launcher: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

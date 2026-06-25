@@ -123,6 +123,22 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
               const Icon(Icons.chevron_right, color: AppColors.textOnPrimary),
             ]),
           ),
+          const SizedBox(height: 10),
+          // Phase 8 — Emergency Sessions
+          ReusableCard(
+            onTap: () => context.push('/sessions/emergency'),
+            backgroundColor: AppColors.statusExpired,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(children: [
+              const Icon(Icons.emergency_outlined, color: AppColors.textOnPrimary, size: 26),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Emergency Sessions', style: AppTypography.titleMedium.copyWith(color: AppColors.textOnPrimary)),
+                Text('Review and approve emergency session requests', style: AppTypography.caption.copyWith(color: AppColors.textOnPrimary.withAlpha(200))),
+              ])),
+              const Icon(Icons.chevron_right, color: AppColors.textOnPrimary),
+            ]),
+          ),
           const SizedBox(height: 24),
           Text('Quick Actions', style: AppTypography.titleLarge),
           const SizedBox(height: 12),
@@ -185,8 +201,11 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
         'icon': Icons.location_city_outlined,
         'color': AppColors.accent,
         'items': [
+          ('Venue Map', Icons.map_outlined, '/venues/map'),
+          ('Find a Venue', Icons.search_outlined, '/venues/list'),
+          ('Venue Status Monitor', Icons.monitor_heart_outlined, '/venues/status'),
           ('Buildings', Icons.business_outlined, '/setup/buildings'),
-          ('Venues', Icons.meeting_room_outlined, '/setup/venues'),
+          ('Venues (CRUD)', Icons.meeting_room_outlined, '/setup/venues'),
         ],
       },
     ];

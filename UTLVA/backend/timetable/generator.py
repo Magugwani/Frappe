@@ -192,6 +192,15 @@ class TimetableGenerator:
     created_by     User instance for TimetableEntry.created_by audit field.
     """
 
+    # Canonical Mon-Sat day ordering for period iteration.
+    # Without this, ordering by the CharField 'day_of_week' in the DB
+    # is alphabetical (FRIDAY < MONDAY < SATURDAY < THURSDAY …), which
+    # causes the generator to fill Friday slots first — a poor schedule.
+    _DAY_ORDER = {
+        'MONDAY': 0, 'TUESDAY': 1, 'WEDNESDAY': 2,
+        'THURSDAY': 3, 'FRIDAY': 4, 'SATURDAY': 5,
+    }
+
     def __init__(
         self,
         academic_year: AcademicYear,
@@ -213,10 +222,12 @@ class TimetableGenerator:
         self._group_bookings: dict = defaultdict(list)
         self._venue_bookings: dict = defaultdict(list)
 
-        # Reference data — loaded once
-        self._periods: List = list(
-            TeachingPeriod.objects.filter(semester=semester, is_active=True)
-            .order_by('day_of_week', 'start_time')
+        # Reference data — loaded once.
+        # Periods are sorted in Mon→Sat order in Python, NOT by the DB
+        # day_of_week CharField (which sorts alphabetically: FRI, MON, SAT…).
+        self._periods: List = sorted(
+            TeachingPeriod.objects.filter(semester=semester, is_active=True),
+            key=lambda p: (self._DAY_ORDER.get(p.day_of_week, 99), p.start_time),
         )
         self._venues: List = list(
             Venue.objects.filter(is_active=True)
@@ -323,13 +334,19 @@ class TimetableGenerator:
 
     def _load_existing_bookings(self):
         """
-        Pre-populate conflict maps from all DRAFT/PUBLISHED entries in this
-        semester so the generator never double-books resources that were
-        manually entered before generation was triggered.
+        Pre-populate conflict maps from all active entries in this semester
+        so the generator never double-books resources that were manually
+        entered or already validated before generation was triggered.
+
+        VALIDATED entries must be included: after a coordinator runs
+        validation (DRAFT → VALIDATED) and then triggers generation,
+        those slots must be treated as occupied.  Omitting VALIDATED
+        caused the generator to silently create conflicting DRAFT entries
+        on already-reserved slots.
         """
         qs = TimetableEntry.objects.filter(
             semester=self.semester,
-            status__in=['DRAFT', 'PUBLISHED'],
+            status__in=['DRAFT', 'VALIDATED', 'PUBLISHED'],
         ).values(
             'lecturer_id', 'student_group_id', 'venue_id',
             'day_of_week', 'start_time', 'end_time',

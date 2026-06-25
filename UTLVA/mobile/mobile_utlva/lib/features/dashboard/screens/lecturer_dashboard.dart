@@ -116,17 +116,17 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
 
   Widget _buildQuickActions() {
     final actions = [
-      ('View Timetable', Icons.calendar_month_outlined, AppColors.primary),
-      ('Create Emergency Session', Icons.add_alert_outlined, AppColors.statusExpired),
-      ('My Venues', Icons.location_city_outlined, AppColors.accent),
-      ('Navigate to Venue', Icons.map_outlined, AppColors.statusFree),
+      ('View Timetable', Icons.calendar_month_outlined, AppColors.primary, '/timetable/lecturer'),
+      ('Create Emergency Session', Icons.add_alert_outlined, AppColors.statusExpired, '/sessions/emergency'),
+      ('Find a Venue', Icons.search_outlined, AppColors.accent, '/venues/list'),
+      ('Venue Map', Icons.map_outlined, AppColors.statusFree, '/venues/map'),
     ];
     return Column(
       children: actions.map((a) {
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: ReusableCard(
-            onTap: () {},
+            onTap: () => context.push(a.$4),
             child: Row(
               children: [
                 Container(
@@ -147,6 +147,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
       }).toList(),
     );
   }
+
 
   void _showProfileSheet(BuildContext context) {
     final user = context.read<AuthProvider>().user;

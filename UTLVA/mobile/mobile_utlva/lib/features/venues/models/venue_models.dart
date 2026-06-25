@@ -102,3 +102,45 @@ class Venue {
         if (longitude != null) 'longitude': longitude,
       };
 }
+
+// ── Phase 8: Venue Status History ─────────────────────────────────────────────
+
+class VenueStatusHistory {
+  final int id;
+  final int venueId;
+  final String oldStatus;
+  final String oldStatusDisplay;
+  final String newStatus;
+  final String newStatusDisplay;
+  final int? changedById;
+  final String? changedByName;
+  final String changedAt;
+  final String reason;
+
+  const VenueStatusHistory({
+    required this.id,
+    required this.venueId,
+    required this.oldStatus,
+    required this.oldStatusDisplay,
+    required this.newStatus,
+    required this.newStatusDisplay,
+    this.changedById,
+    this.changedByName,
+    required this.changedAt,
+    required this.reason,
+  });
+
+  factory VenueStatusHistory.fromJson(Map<String, dynamic> j) =>
+      VenueStatusHistory(
+        id: j['id'] as int,
+        venueId: j['venue'] as int,
+        oldStatus: j['old_status'] as String? ?? '',
+        oldStatusDisplay: j['old_status_display'] as String? ?? '',
+        newStatus: j['new_status'] as String? ?? '',
+        newStatusDisplay: j['new_status_display'] as String? ?? '',
+        changedById: j['changed_by'] as int?,
+        changedByName: j['changed_by_name'] as String?,
+        changedAt: j['changed_at'] as String? ?? '',
+        reason: j['reason'] as String? ?? '',
+      );
+}

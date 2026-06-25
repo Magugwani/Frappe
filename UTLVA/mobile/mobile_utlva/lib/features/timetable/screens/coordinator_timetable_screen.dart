@@ -9,6 +9,7 @@ import '../../../features/academics/services/academics_service.dart';
 import '../../../features/venues/models/venue_models.dart';
 import '../../../features/venues/services/venues_service.dart';
 import '../models/timetable_entry.dart';
+import '../models/venue_recommendation.dart';
 import '../services/timetable_service.dart';
 
 class CoordinatorTimetableScreen extends StatefulWidget {
@@ -41,9 +42,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
   bool _loading = true;
   bool _refDataLoaded = false;
 
-  // Prevents concurrent _loadEntries() calls from racing each other.
-  // Each call increments this; on completion it only updates state if the
-  // value still matches (i.e. no newer call has started).
   int _loadSeq = 0;
 
   @override
@@ -60,7 +58,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
         _acService.getProgrammes(),
         _acService.getLecturers(),
         _vService.getVenues(),
-        _acService.getCourses(),   // load ALL courses upfront — form filters by programme
+        _acService.getCourses(),
       ]);
       setState(() {
         _years = results[0] as List<AcademicYear>;
@@ -68,7 +66,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
         _programmes = results[2] as List<Programme>;
         _lecturers = results[3] as List<Lecturer>;
         _venues = results[4] as List<Venue>;
-        _courses = results[5] as List<Course>;  // all courses, form filters by programme
+        _courses = results[5] as List<Course>;
         if (_years.isNotEmpty) _selectedYear = _years.first;
         if (_semesters.isNotEmpty) _selectedSemester = _semesters.first;
         if (_programmes.isNotEmpty) _selectedProgramme = _programmes.first;
@@ -87,11 +85,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
     setState(() => _groups = groups);
   }
 
-  /// Load timetable entries for the current filter bar selections.
-  ///
-  /// Sequence number ensures rapid filter changes never leave a stale result:
-  /// only the response from the MOST RECENT call updates state.
-  /// try-finally guarantees _loading is ALWAYS reset, even on unexpected errors.
   Future<void> _loadEntries() async {
     if (!mounted) return;
     final seq = ++_loadSeq;
@@ -110,7 +103,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
         setState(() => _entries = []);
       }
     } finally {
-      // Always reset loading for the current sequence — prevents infinite spinner
       if (mounted && seq == _loadSeq) {
         setState(() => _loading = false);
       }
@@ -188,7 +180,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
               displayText: (y) => y.name,
               onChanged: (y) {
                 setState(() => _selectedYear = y);
-                _loadEntries(); // sequence-number guard handles racing calls
+                _loadEntries();
               },
             ),
             const SizedBox(width: 10),
@@ -248,19 +240,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
     ]),
   );
 
-  // ── Entry form ──────────────────────────────────────────────────────────────
-  //
-  // ROOT CAUSE FIX 3:
-  // Previous approach used addPostFrameCallback to delay _loadEntries().
-  // Problem: addPostFrameCallback fires one frame after Navigator.pop(),
-  // but the modal close ANIMATION takes multiple frames (~300ms). During those
-  // frames the overlay is still present, widgets are mid-animation, and calling
-  // setState(_loading = true) causes hit-test failures on uncommitted layouts.
-  //
-  // Fix: `await showModalBottomSheet<bool>()`.
-  // The await resolves ONLY after the modal is completely closed and all
-  // animation frames have settled. Calling _loadEntries() after the await is
-  // 100% safe — the main screen is fully visible and laid out.
   Future<void> _showEntryForm(BuildContext context, {TimetableEntry? entry}) async {
     final bool? success = await showModalBottomSheet<bool>(
       context: context,
@@ -276,27 +255,24 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
         lecturers: _lecturers,
         venues: _venues,
         acService: _acService,
+        ttService: _ttService,
+        selectedSemesterId: _selectedSemester?.id,
         onSaved: (e) async {
-          // API call — throws on error (form's catch block shows snackbar)
           entry == null
               ? await _ttService.createEntry(e)
               : await _ttService.updateEntry(e);
-
           if (!ctx.mounted) return;
-          // Return true = success; modal is closed by the form via Navigator.pop(ctx, true)
           Navigator.pop(ctx, true);
         },
         onDelete: entry == null ? null : (e) async {
           await _ttService.deleteEntry(e.id);
           if (ctx.mounted) Navigator.pop(ctx, true);
         },
-        // Pass the saved entry's IDs so parent can sync its filter bar
         savedEntryRef: entry,
       ),
     );
 
     if (success == true && mounted) {
-      // Modal is FULLY closed here — no animation, no overlay, safe to setState.
       _loadEntries();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -311,15 +287,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
   }
 }
 
-// ── Entry form widget (fixed) ─────────────────────────────────────────────────
-//
-// Bugs fixed:
-//  1. _semId! / _progId! could throw NullCheckException → added null guards
-//  2. _saving never reset → added finally block
-//  3. No try-catch → exceptions now shown as snackbar inside the form
-//  4. Semester showed all semesters → now filtered by selected year
-//  5. Course list was stale when programme changed → now filtered by _progId
-//  6. _courseId/_groupId not reset when programme changes → now reset on change
+// ── Entry form widget (Phase 8 enhanced) ──────────────────────────────────────
 class _EntryForm extends StatefulWidget {
   final TimetableEntry? entry;
   final List<AcademicYear> years;
@@ -330,9 +298,11 @@ class _EntryForm extends StatefulWidget {
   final List<Lecturer> lecturers;
   final List<Venue> venues;
   final AcademicsService acService;
+  final TimetableService ttService;
+  final int? selectedSemesterId;
   final Future<void> Function(TimetableEntry) onSaved;
   final Future<void> Function(TimetableEntry)? onDelete;
-  final TimetableEntry? savedEntryRef; // unused — kept for API compat
+  final TimetableEntry? savedEntryRef;
 
   const _EntryForm({
     this.entry,
@@ -344,6 +314,8 @@ class _EntryForm extends StatefulWidget {
     required this.lecturers,
     required this.venues,
     required this.acService,
+    required this.ttService,
+    this.selectedSemesterId,
     required this.onSaved,
     this.onDelete,
     this.savedEntryRef,
@@ -362,13 +334,18 @@ class _EntryFormState extends State<_EntryForm> {
   String _status = 'DRAFT';
   bool _saving = false;
 
+  // Phase 8
+  int? _expectedStudentCount;
+  VenueRecommendationResult? _recommendations;
+  bool _loadingRecommendations = false;
+  Set<int> _recommendedVenueIds = {};
+
   static const _days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
   static const _times = [
     '07:00:00', '08:00:00', '09:00:00', '10:00:00', '11:00:00', '12:00:00',
     '13:00:00', '14:00:00', '15:00:00', '16:00:00', '17:00:00', '18:00:00',
   ];
 
-  // Derived lists filtered by current selections
   List<Semester> get _visibleSemesters =>
       widget.allSemesters.where((s) => _yearId == null || s.academicYearId == _yearId).toList();
 
@@ -383,18 +360,12 @@ class _EntryFormState extends State<_EntryForm> {
     super.initState();
     final e = widget.entry;
     _yearId = e?.academicYearId ?? (widget.years.isNotEmpty ? widget.years.first.id : null);
-
-    // Default semester to first one matching the selected year
     final yearlySems = _visibleSemesters;
     _semId = e?.semesterId ?? (yearlySems.isNotEmpty ? yearlySems.first.id : null);
-
     _progId = e?.programmeId ?? (widget.programmes.isNotEmpty ? widget.programmes.first.id : null);
     _groupId = e?.studentGroupId;
-
-    // Default course to first one for the selected programme
     final progCourses = _visibleCourses;
     _courseId = e?.courseId ?? (progCourses.isNotEmpty ? progCourses.first.id : null);
-
     _lecturerId = e?.lecturerId ?? (widget.lecturers.isNotEmpty ? widget.lecturers.first.id : null);
     _venueId = e?.venueId;
     _day = e?.dayOfWeek ?? 'MONDAY';
@@ -408,8 +379,85 @@ class _EntryFormState extends State<_EntryForm> {
     return '${parts[0]}:${parts[1]}';
   }
 
+  Future<void> _fetchRecommendations() async {
+    if (_expectedStudentCount == null || _expectedStudentCount! < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Enter expected student count first.'),
+        backgroundColor: AppColors.warning,
+      ));
+      return;
+    }
+    setState(() {
+      _loadingRecommendations = true;
+      _recommendations = null;
+    });
+    try {
+      final result = await widget.ttService.getVenueRecommendations(
+        studentsCount: _expectedStudentCount!,
+        dayOfWeek: _day,
+        startTime: _startTime,
+        endTime: _endTime,
+        semesterId: _semId ?? widget.selectedSemesterId,
+      );
+      if (mounted) {
+        setState(() {
+          _recommendations = result;
+          _recommendedVenueIds = result.recommended.map((v) => v.id).toSet();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to get recommendations: $e'),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingRecommendations = false);
+    }
+  }
+
+  Future<void> _selectVenueWithOverrideCheck(int venueId) async {
+    if (_recommendations != null &&
+        _recommendations!.hasRecommendations &&
+        !_recommendedVenueIds.contains(venueId)) {
+      final note = await _showOverrideReasonDialog();
+      if (!mounted) return;
+      if (note == null) return;
+    }
+    setState(() => _venueId = venueId);
+  }
+
+  Future<String?> _showOverrideReasonDialog() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Venue Override'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('This venue was not in the recommendations. Please state the reason for override:'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Override reason...'),
+          ),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _save() async {
-    // Guard: all required fields must be non-null before building entry
     if (_yearId == null || _semId == null || _progId == null ||
         _courseId == null || _lecturerId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -442,11 +490,8 @@ class _EntryFormState extends State<_EntryForm> {
         endTime: _endTime,
         status: _status,
       );
-      // onSaved calls the API and pops the modal on success.
-      // On failure it throws — caught below.
       await widget.onSaved(entry);
     } catch (err) {
-      // API error: keep form open so user can correct data
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Save failed: $err'),
@@ -454,7 +499,6 @@ class _EntryFormState extends State<_EntryForm> {
         ));
       }
     } finally {
-      // Always re-enable the save button regardless of outcome
       if (mounted) setState(() => _saving = false);
     }
   }
@@ -466,9 +510,6 @@ class _EntryFormState extends State<_EntryForm> {
     final courseItems = _visibleCourses;
     final groupItems = _visibleGroups;
 
-    // Clamp selections: if filtered list no longer contains the selected ID, reset.
-    // MUST use addPostFrameCallback — mutating state during build() causes
-    // layout errors. Schedule the reset for the next frame.
     if (_semId != null && !semItems.any((s) => s.id == _semId)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _semId = null);
@@ -500,12 +541,12 @@ class _EntryFormState extends State<_EntryForm> {
           ]),
           const SizedBox(height: 20),
 
-          // ── Academic Year (FIX 4: semester filtered by year) ────────────────
+          // Academic Year + Semester
           Row(children: [
             Expanded(child: _dd<int?>(
               'Academic Year *', _yearId,
               widget.years.map((y) => DropdownMenuItem(value: y.id, child: Text(y.name))).toList(),
-              (v) => setState(() { _yearId = v; _semId = null; }),  // reset semester on year change
+              (v) => setState(() { _yearId = v; _semId = null; }),
             )),
             const SizedBox(width: 10),
             Expanded(child: _dd<int?>(
@@ -516,15 +557,15 @@ class _EntryFormState extends State<_EntryForm> {
           ]),
           const SizedBox(height: 12),
 
-          // ── Programme + Group (FIX 5-6: courses/groups filtered, IDs reset) ─
+          // Programme + Group
           Row(children: [
             Expanded(child: _dd<int?>(
               'Programme *', _progId,
               widget.programmes.map((p) => DropdownMenuItem(value: p.id, child: Text(p.code))).toList(),
               (v) => setState(() {
                 _progId = v;
-                _courseId = null;  // reset course when programme changes
-                _groupId = null;   // reset group when programme changes
+                _courseId = null;
+                _groupId = null;
               }),
             )),
             const SizedBox(width: 10),
@@ -539,7 +580,7 @@ class _EntryFormState extends State<_EntryForm> {
           ]),
           const SizedBox(height: 12),
 
-          // ── Course (filtered by programme) ────────────────────────────────
+          // Course
           _dd<int?>(
             'Course *', _courseId,
             courseItems.map((c) => DropdownMenuItem(
@@ -550,52 +591,129 @@ class _EntryFormState extends State<_EntryForm> {
           ),
           const SizedBox(height: 12),
 
-          // ── Lecturer + Venue ───────────────────────────────────────────────
-          Row(children: [
-            Expanded(child: _dd<int?>(
-              'Lecturer *', _lecturerId,
-              widget.lecturers.map((l) => DropdownMenuItem(
-                value: l.id, child: Text(l.fullName, overflow: TextOverflow.ellipsis),
-              )).toList(),
-              (v) => setState(() => _lecturerId = v),
-            )),
-            const SizedBox(width: 10),
-            Expanded(child: _dd<int?>(
-              'Venue', _venueId,
-              [
-                const DropdownMenuItem(value: null, child: Text('No venue')),
-                ...widget.venues.map((v) => DropdownMenuItem(value: v.id, child: Text(v.code))),
-              ],
-              (v) => setState(() => _venueId = v),
-            )),
-          ]),
-          const SizedBox(height: 12),
-
-          // ── Day ────────────────────────────────────────────────────────────
-          _dd<String>(
-            'Day of Week', _day,
-            _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
-            (v) => setState(() => _day = v!),
+          // Lecturer
+          _dd<int?>(
+            'Lecturer *', _lecturerId,
+            widget.lecturers.map((l) => DropdownMenuItem(
+              value: l.id, child: Text(l.fullName, overflow: TextOverflow.ellipsis),
+            )).toList(),
+            (v) => setState(() => _lecturerId = v),
           ),
           const SizedBox(height: 12),
 
-          // ── Start + End time ───────────────────────────────────────────────
+          // Day
+          _dd<String>(
+            'Day of Week', _day,
+            _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+            (v) => setState(() { _day = v!; _recommendations = null; }),
+          ),
+          const SizedBox(height: 12),
+
+          // Start + End time
           Row(children: [
             Expanded(child: _dd<String>(
               'Start Time', _startTime,
               _times.map((t) => DropdownMenuItem(value: t, child: Text(_hm(t)))).toList(),
-              (v) => setState(() => _startTime = v!),
+              (v) => setState(() { _startTime = v!; _recommendations = null; }),
             )),
             const SizedBox(width: 10),
             Expanded(child: _dd<String>(
               'End Time', _endTime,
               _times.map((t) => DropdownMenuItem(value: t, child: Text(_hm(t)))).toList(),
-              (v) => setState(() => _endTime = v!),
+              (v) => setState(() { _endTime = v!; _recommendations = null; }),
             )),
           ]),
+          const SizedBox(height: 16),
+
+          // ── Phase 8: Venue Recommendations section ─────────────────────────
+          const Divider(),
+          Text('Venue Recommendations', style: AppTypography.titleMedium.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: TextFormField(
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Expected Student Count',
+                  hintText: 'e.g. 40',
+                ),
+                onChanged: (v) {
+                  final n = int.tryParse(v);
+                  setState(() {
+                    _expectedStudentCount = n;
+                    _recommendations = null;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+              icon: _loadingRecommendations
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(
+                          color: AppColors.textOnPrimary, strokeWidth: 2))
+                  : const Icon(Icons.search, color: AppColors.textOnPrimary),
+              label: const Text('Find Venues',
+                  style: TextStyle(color: AppColors.textOnPrimary)),
+              onPressed: _loadingRecommendations ? null : _fetchRecommendations,
+            ),
+          ]),
+          const SizedBox(height: 8),
+
+          // Recommendation results
+          if (_recommendations != null) ...[
+            if (_recommendations!.hasRecommendations) ...[
+              Text('Recommended venues:',
+                  style: AppTypography.labelMedium.copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              ..._recommendations!.recommended.map((rec) => _VenueRecommendationCard(
+                rec: rec,
+                isSelected: _venueId == rec.id,
+                onSelect: () => setState(() => _venueId = rec.id),
+              )),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withAlpha(20),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withAlpha(60)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.warning_amber_outlined, color: AppColors.warning, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _recommendations!.notFoundReason ?? 'No venues found.',
+                      style: AppTypography.bodySmall.copyWith(color: AppColors.warning),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 4),
+          ],
+
+          // Manual venue dropdown (fallback/override)
+          _dd<int?>(
+            'Venue (manual override)', _venueId,
+            [
+              const DropdownMenuItem(value: null, child: Text('No venue')),
+              ...widget.venues.map((v) => DropdownMenuItem(value: v.id, child: Text(v.code))),
+            ],
+            (v) async {
+              if (v != null) {
+                await _selectVenueWithOverrideCheck(v);
+              } else {
+                setState(() => _venueId = null);
+              }
+            },
+          ),
           const SizedBox(height: 12),
 
-          // ── Status ─────────────────────────────────────────────────────────
+          // Status
           _dd<String>(
             'Status', _status,
             ['DRAFT', 'PUBLISHED', 'VALIDATED'].map((s) =>
@@ -604,7 +722,7 @@ class _EntryFormState extends State<_EntryForm> {
           ),
           const SizedBox(height: 24),
 
-          // ── Save button ────────────────────────────────────────────────────
+          // Save button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -612,7 +730,8 @@ class _EntryFormState extends State<_EntryForm> {
               child: _saving
                   ? const SizedBox(
                       height: 20, width: 20,
-                      child: CircularProgressIndicator(color: AppColors.textOnPrimary, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                          color: AppColors.textOnPrimary, strokeWidth: 2),
                     )
                   : Text(isEdit ? 'Save Changes' : 'Create Entry'),
             ),
@@ -628,6 +747,106 @@ class _EntryFormState extends State<_EntryForm> {
       decoration: InputDecoration(labelText: label),
       items: items,
       onChanged: onChanged,
+    );
+  }
+}
+
+// ── Venue Recommendation Card ─────────────────────────────────────────────────
+
+class _VenueRecommendationCard extends StatelessWidget {
+  final VenueRecommendation rec;
+  final bool isSelected;
+  final VoidCallback onSelect;
+
+  const _VenueRecommendationCard({
+    required this.rec,
+    required this.isSelected,
+    required this.onSelect,
+  });
+
+  Color get _fitColor {
+    if (rec.fitLabel == 'Best fit') return AppColors.statusFree;
+    if (rec.fitLabel == 'Good fit') return AppColors.accent;
+    return AppColors.statusInUse;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? AppColors.primary.withAlpha(20) : AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isSelected ? AppColors.primary : AppColors.inputBorder,
+          width: isSelected ? 2 : 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(
+              child: Text(
+                '${rec.code} — ${rec.name}',
+                style: AppTypography.titleMedium,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _fitColor.withAlpha(30),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(rec.fitLabel,
+                  style: AppTypography.labelMedium.copyWith(color: _fitColor)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Row(children: [
+            const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
+            const SizedBox(width: 4),
+            Text(rec.buildingName, style: AppTypography.bodySmall),
+            const SizedBox(width: 12),
+            const Icon(Icons.people_outline, size: 14, color: AppColors.textSecondary),
+            const SizedBox(width: 4),
+            Text('${rec.capacity} seats (${rec.utilizationPct}%)',
+                style: AppTypography.bodySmall),
+          ]),
+          if (rec.resources.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              children: rec.resources
+                  .take(4)
+                  .map((r) => Chip(
+                        label: Text(r.toString(),
+                            style: AppTypography.caption
+                                .copyWith(color: AppColors.textSecondary)),
+                        padding: EdgeInsets.zero,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: AppColors.background,
+                        side: const BorderSide(color: AppColors.inputBorder),
+                      ))
+                  .toList(),
+            ),
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: isSelected ? null : onSelect,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+              ),
+              child: Text(isSelected ? 'Selected' : 'Select'),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }

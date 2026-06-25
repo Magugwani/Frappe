@@ -53,3 +53,25 @@ class Venue(models.Model):
 
     def __str__(self):
         return f'{self.code} — {self.name} ({self.building.name})'
+
+
+# ── Phase 8: Venue Status History ─────────────────────────────────────────────
+
+class VenueStatusHistory(models.Model):
+    venue      = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='status_history')
+    old_status = models.CharField(max_length=20, choices=Venue.Status.choices)
+    new_status = models.CharField(max_length=20, choices=Venue.Status.choices)
+    changed_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True)
+    changed_at = models.DateTimeField(auto_now_add=True)
+    reason     = models.TextField(blank=True)
+    timetable_entry = models.ForeignKey(
+        'timetable.TimetableEntry', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='venue_status_changes',
+    )
+
+    class Meta:
+        db_table = 'venue_status_history'
+        ordering = ['-changed_at']
+
+    def __str__(self):
+        return f'{self.venue.code}: {self.old_status}→{self.new_status} by {self.changed_by}'

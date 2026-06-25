@@ -126,9 +126,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildQuickActions() {
     final actions = [
-      ('My Timetable', Icons.calendar_month_outlined, AppColors.primary),
-      ('Find Venue', Icons.map_outlined, AppColors.accent),
-      ('Notifications', Icons.notifications_outlined, AppColors.statusBooked),
+      ('My Timetable', Icons.calendar_month_outlined, AppColors.primary, '/timetable/student'),
+      ('Venue Map', Icons.map_outlined, AppColors.accent, '/venues/map'),
+      ('Find Venue', Icons.search_outlined, AppColors.statusBooked, '/venues/list'),
     ];
     return Row(
       children: List.generate(actions.length, (i) {
@@ -137,7 +137,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           child: Padding(
             padding: EdgeInsets.only(right: i < actions.length - 1 ? 10 : 0),
             child: ReusableCard(
-              onTap: () {},
+              onTap: () => context.push(a.$4),
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [

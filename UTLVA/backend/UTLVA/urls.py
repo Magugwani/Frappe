@@ -18,4 +18,7 @@ urlpatterns = [
     path('api/academics/', include('academics.urls')),
     path('api/venues/', include('venues.urls')),
     path('api/timetable/', include('timetable.urls')),
+    # Phase 8
+    path('api/sessions/', include('timetable.sessions_urls')),
+    path('api/system/', include('timetable.system_urls')),
 ]

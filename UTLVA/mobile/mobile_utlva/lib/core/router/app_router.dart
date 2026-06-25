@@ -25,6 +25,14 @@ import '../../features/academics/screens/course_screen.dart';
 import '../../features/academics/screens/lecturer_screen.dart';
 import '../../features/venues/screens/building_screen.dart';
 import '../../features/venues/screens/venue_screen.dart';
+// Phase 8 — Emergency Sessions & Venue Status
+import '../../features/timetable/screens/emergency_session_screen.dart';
+import '../../features/venues/screens/venue_status_screen.dart';
+// Phase 9 — Venue Map & Navigation
+import '../../features/venues/screens/venue_map_screen.dart';
+import '../../features/venues/screens/venue_detail_screen.dart';
+import '../../features/venues/screens/venue_list_screen.dart';
+import '../../features/venues/models/venue_map_data.dart';
 
 class AppRouter {
   static GoRouter router(AuthProvider auth) {
@@ -113,6 +121,19 @@ class AppRouter {
         GoRoute(path: '/setup/lecturers', builder: (context, state) => const LecturerScreen()),
         GoRoute(path: '/setup/buildings', builder: (context, state) => const BuildingScreen()),
         GoRoute(path: '/setup/venues', builder: (context, state) => const VenueScreen()),
+        // Phase 8 — Emergency Sessions & Venue Status
+        GoRoute(path: '/sessions/emergency', builder: (context, state) => const EmergencySessionScreen()),
+        GoRoute(path: '/venues/status', builder: (context, state) => const VenueStatusScreen()),
+        // Phase 9 — Venue Map, List & Detail
+        GoRoute(path: '/venues/map', builder: (context, state) => const VenueMapScreen()),
+        GoRoute(path: '/venues/list', builder: (context, state) => const VenueListScreen()),
+        GoRoute(
+          path: '/venues/detail/:id',
+          builder: (context, state) => VenueDetailScreen(
+            venueId: int.parse(state.pathParameters['id']!),
+            prefetched: state.extra as VenueMapData?,
+          ),
+        ),
       ],
       errorBuilder: (context, state) => Scaffold(
         body: Center(child: Text('Page not found: ${state.uri}')),
