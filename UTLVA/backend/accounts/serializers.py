@@ -1,6 +1,11 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import User
+from django.db import transaction
+import csv
+from io import StringIO
+from django.core.mail import send_mail
+from django.conf import settings
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -43,3 +48,34 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user.set_password(password)
         user.save()
         return user
+class UserListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'full_name', 'role', 'phone_number', 'is_active', 'date_joined']
+        read_only_fields = ['id', 'date_joined']
+
+class BulkUserCreateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = [
+            "full_name",
+            "email",
+            "role",
+            "phone_number",
+        ]
+
+class BulkUserUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(required=True)
+    import_mode = serializers.ChoiceField(
+        choices=['strict', 'partial'], 
+        default='strict',
+        help_text="strict = fail on first error, partial = skip bad rows"
+    )
+
+    def validate_file(self, file):
+        if not file.name.lower().endswith('.csv'):
+            raise serializers.ValidationError("Only .csv files are allowed.")
+        if file.size > 5 * 1024 * 1024:  # 5MB limit
+            raise serializers.ValidationError("File too large. Maximum 5MB.")
+        return file
