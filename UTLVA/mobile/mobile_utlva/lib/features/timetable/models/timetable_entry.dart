@@ -17,6 +17,16 @@ class TimetableEntry {
   final int? venueId;
   final String? venueCode;
   final String? venueName;
+  // Live timetable: venue status + location for map navigation
+  final String? venueStatus;          // FREE | BOOKED | IN_USE | EXPIRED | MAINTENANCE
+  final String? venueStatusDisplay;
+  final String? venueMarkerColor;     // hex color matching status
+  final double? venueLatitude;
+  final double? venueLongitude;
+  final int? venueFloor;
+  final String? venueBuildingName;
+  final String? venueIndoorIdentifier;
+
   final String dayOfWeek;
   final String? date;
   final String startTime; // "08:00:00"
@@ -42,6 +52,14 @@ class TimetableEntry {
     this.venueId,
     this.venueCode,
     this.venueName,
+    this.venueStatus,
+    this.venueStatusDisplay,
+    this.venueMarkerColor,
+    this.venueLatitude,
+    this.venueLongitude,
+    this.venueFloor,
+    this.venueBuildingName,
+    this.venueIndoorIdentifier,
     required this.dayOfWeek,
     this.date,
     required this.startTime,
@@ -68,6 +86,14 @@ class TimetableEntry {
         venueId: j['venue'],
         venueCode: j['venue_code'],
         venueName: j['venue_name'],
+        venueStatus: j['venue_status'],
+        venueStatusDisplay: j['venue_status_display'],
+        venueMarkerColor: j['venue_marker_color'],
+        venueLatitude: (j['venue_latitude'] as num?)?.toDouble(),
+        venueLongitude: (j['venue_longitude'] as num?)?.toDouble(),
+        venueFloor: j['venue_floor'],
+        venueBuildingName: j['venue_building_name'],
+        venueIndoorIdentifier: j['venue_indoor_identifier'],
         dayOfWeek: j['day_of_week'] ?? '',
         date: j['date'],
         startTime: j['start_time'] ?? '',
@@ -75,7 +101,7 @@ class TimetableEntry {
         status: j['status'] ?? 'DRAFT',
       );
 
-  Map<String, dynamic> toJson({int? createdBy}) => {
+  Map<String, dynamic> toJson() => {
         'academic_year': academicYearId,
         'semester': semesterId,
         'programme': programmeId,
@@ -90,8 +116,10 @@ class TimetableEntry {
         'status': status,
       };
 
-  /// Start time as hours + minutes for grid positioning.
-  /// Input: "08:00:00" or "08:00"
+  bool get hasVenueCoordinates =>
+      venueLatitude != null && venueLongitude != null;
+
+  /// Start time as minutes for grid positioning.
   int get startMinutes {
     final parts = startTime.split(':');
     return int.parse(parts[0]) * 60 + int.parse(parts[1]);

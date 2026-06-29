@@ -159,6 +159,47 @@ class LecturerViewSet(viewsets.ModelViewSet):
         except LecturerCourse.DoesNotExist:
             return Response({'detail': 'Assignment not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+    @action(detail=False, methods=['get'], url_path='my-courses',
+            permission_classes=[IsAuthenticated])
+    def my_courses(self, request):
+        """
+        GET /api/academics/lecturers/my-courses/
+        Returns courses assigned to the authenticated lecturer (FR-20).
+        """
+        try:
+            lecturer = Lecturer.objects.get(user=request.user)
+        except Lecturer.DoesNotExist:
+            return Response(
+                {'detail': 'No lecturer profile found for this account.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        assignments = (
+            LecturerCourse.objects
+            .select_related('course__programme', 'academic_year')
+            .filter(lecturer=lecturer)
+            .order_by('academic_year__name', 'course__course_code')
+        )
+
+        data = [
+            {
+                'assignment_id': a.id,
+                'course_id': a.course.id,
+                'course_code': a.course.course_code,
+                'course_name': a.course.course_name,
+                'programme_code': a.course.programme.code,
+                'programme_name': a.course.programme.name,
+                'year_of_study': a.course.year_of_study,
+                'weekly_hours': a.course.weekly_hours,
+                'credit_hours': a.course.credit_hours,
+                'required_venue_type': a.course.required_venue_type,
+                'academic_year': a.academic_year.name if a.academic_year else None,
+                'assigned_at': str(a.assigned_at) if hasattr(a, 'assigned_at') else None,
+            }
+            for a in assignments
+        ]
+        return Response({'count': len(data), 'courses': data})
+
 
 class StudentProfileViewSet(viewsets.ModelViewSet):
     """

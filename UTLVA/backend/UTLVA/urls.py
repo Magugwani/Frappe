@@ -21,4 +21,6 @@ urlpatterns = [
     # Phase 8
     path('api/sessions/', include('timetable.sessions_urls')),
     path('api/system/', include('timetable.system_urls')),
+    # SRS §3.7 — In-app notifications
+    path('api/notifications/', include('notifications.urls')),
 ]

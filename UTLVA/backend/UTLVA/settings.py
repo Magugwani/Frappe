@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'academics',
     'venues',
     'timetable',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -147,9 +148,53 @@ CORS_ALLOWED_ORIGINS = config(
     cast=Csv(),
 )
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # allows any origin in DEBUG mode (Flutter web)
 
-# Allow Flutter web and mobile
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-# Celery
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+# ── Email configuration (SMTP via Gmail App Password) ────────────────────────
+# Rules:
+#   • EMAIL_USE_TLS = True  and EMAIL_USE_SSL = False  → port 587 (STARTTLS) ✓
+#   • EMAIL_USE_TLS = False and EMAIL_USE_SSL = True   → port 465 (implicit SSL)
+#   • Never set both to True — Django raises an error.
+# Gmail App Password contains spaces (groups of 4). Keep it in .env quoted:
+#   EMAIL_HOST_PASSWORD="xxxx xxxx xxxx xxxx"
+# DEFAULT_FROM_EMAIL must be a plain address or RFC 2822 display name:
+#   DEFAULT_FROM_EMAIL=UTLVA System <maduhumagugwani@gmail.com>
+
+EMAIL_HOST          = config('EMAIL_HOST',          default='')
+EMAIL_PORT          = config('EMAIL_PORT',          default=587, cast=int)
+EMAIL_HOST_USER     = config('EMAIL_HOST_USER',     default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS       = config('EMAIL_USE_TLS',       default=True,  cast=bool)
+EMAIL_USE_SSL       = config('EMAIL_USE_SSL',       default=False, cast=bool)
+EMAIL_TIMEOUT       = 20   # seconds — fail fast on bad host
+
+# Sanitise DEFAULT_FROM_EMAIL: if the .env value has a bare name without
+# angle brackets (e.g. "UTLVA maduhumagugwani@gmail.com") we use the email
+# part only to avoid RFC 2822 parse errors in Django's SMTP backend.
+_raw_from = config('DEFAULT_FROM_EMAIL', default='noreply@utlva.local')
+if '<' not in _raw_from and ' ' in _raw_from:
+    # e.g. "UTLVA maduhumagugwani@gmail.com" → take the last token
+    _from_parts = _raw_from.strip().split()
+    DEFAULT_FROM_EMAIL = _from_parts[-1]
+else:
+    DEFAULT_FROM_EMAIL = _raw_from
+
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Frontend URL used in password-reset emails
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:46063')
+
+# SRS configuration parameters
+PASSWORD_RESET_LINK_HOURS        = config('PASSWORD_RESET_LINK_HOURS',        default=72,  cast=int)
+CONFIRMATION_WINDOW_MINUTES      = config('CONFIRMATION_WINDOW_MINUTES',      default=40,  cast=int)
+REMINDER_LEAD_MINUTES            = config('REMINDER_LEAD_MINUTES',            default=120, cast=int)
+SMS_DAILY_CAP_PER_USER           = config('SMS_DAILY_CAP_PER_USER',           default=5,   cast=int)
+SMS_BULK_APPROVAL_THRESHOLD      = config('SMS_BULK_APPROVAL_THRESHOLD',      default=50,  cast=int)
+MAX_BULK_UPLOAD_ROWS             = config('MAX_BULK_UPLOAD_ROWS',             default=5000,cast=int)
+VENUE_STATUS_CHECK_INTERVAL_SECS = config('VENUE_STATUS_CHECK_INTERVAL_SECS', default=60,  cast=int)
+
+if EMAIL_HOST:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+else:
+    # No SMTP host → print emails to the runserver console (dev fallback).
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

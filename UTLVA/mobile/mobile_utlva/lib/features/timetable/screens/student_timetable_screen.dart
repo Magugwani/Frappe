@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../core/widgets/custom_app_bar.dart';
@@ -287,10 +288,16 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
         children: [
           _buildHeader(),
           const SizedBox(height: 14),
-          // Dynamic time range derived from entries — no fixed 07:00–19:00
+          // FR-37: Venue status dots enabled so students see real-time venue state
           TimetableGridView(
             entries: _entries,
             showOnlyDaysWithEntries: false,
+            showVenueStatus: true,
+            onVenueNavigate: (entry) {
+              if (entry.venueLatitude != null && entry.venueLongitude != null) {
+                context.push('/venues/map');
+              }
+            },
           ),
         ],
       ),

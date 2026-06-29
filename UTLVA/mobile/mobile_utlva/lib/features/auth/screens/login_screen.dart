@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../core/config/institution_config.dart';
 import '../../../core/theme/app_colors.dart';
@@ -260,7 +261,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 autocorrect: false,
                 decoration: const InputDecoration(
                   labelText: 'Email address',
-                  hintText: 'e.g. student@utlva.ac.tz',
+                  hintText: 'e.g. student@gmail.com',
                   prefixIcon: Icon(Icons.email_outlined),
                 ),
                 validator: (v) {
@@ -304,7 +305,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () {},
+                  onPressed: () => context.push('/forgot-password'),
                   child: Text(
                     'Forgot Password?',
                     style: AppTypography.labelMedium.copyWith(

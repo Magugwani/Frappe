@@ -51,12 +51,18 @@ class TimetableGridView extends StatelessWidget {
   final Color Function(TimetableEntry)? entryColorBuilder;
 
   /// When true, days with no entries are hidden.
-  /// Useful for lecturer view where Saturday may be unused.
   final bool showOnlyDaysWithEntries;
 
-  /// Extra legend entries shown below the grid (e.g. [CONFIRMED, green]).
-  /// If null, the default PUBLISHED / DRAFT legend is shown.
+  /// Extra legend entries shown below the grid.
   final List<TimetableLegendItem>? legends;
+
+  /// When true, a coloured dot showing the venue's live status (FREE/BOOKED/IN_USE)
+  /// is displayed in each session card. Used by the Live Timetable view.
+  final bool showVenueStatus;
+
+  /// Called when the user taps the navigation icon inside a session card.
+  /// Receives the entry so the caller can open Google Maps / VenueDetailScreen.
+  final void Function(TimetableEntry)? onVenueNavigate;
 
   /// Fallback start hour when [entries] is empty. Default: 08.
   final int fallbackStartHour;
@@ -71,6 +77,8 @@ class TimetableGridView extends StatelessWidget {
     this.entryColorBuilder,
     this.showOnlyDaysWithEntries = false,
     this.legends,
+    this.showVenueStatus = false,
+    this.onVenueNavigate,
     this.fallbackStartHour = 8,
     this.fallbackEndHour = 18,
   });
@@ -285,6 +293,8 @@ class TimetableGridView extends StatelessWidget {
                       entry: entry,
                       color: _colorFor(entry),
                       onTap: onEntryTap != null ? () => onEntryTap!(entry) : null,
+                      showVenueStatus: showVenueStatus,
+                      onNavigate: onVenueNavigate != null ? () => onVenueNavigate!(entry) : null,
                     ),
                   );
                 }),
@@ -352,8 +362,23 @@ class _EntryCard extends StatelessWidget {
   final TimetableEntry entry;
   final Color color;
   final VoidCallback? onTap;
+  final bool showVenueStatus;
+  final VoidCallback? onNavigate;
 
-  const _EntryCard({required this.entry, required this.color, this.onTap});
+  const _EntryCard({
+    required this.entry,
+    required this.color,
+    this.onTap,
+    this.showVenueStatus = false,
+    this.onNavigate,
+  });
+
+  /// Parse hex color string like "#22c55e" → Color
+  Color _parseHex(String? hex) {
+    if (hex == null) return Colors.grey;
+    final h = hex.replaceFirst('#', '');
+    return Color(int.parse('FF$h', radix: 16));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -370,7 +395,7 @@ class _EntryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Course code + time range
+            // Row 1: Course code + time range + optional venue status dot
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -385,16 +410,31 @@ class _EntryCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Text(
-                  '${entry.startHHMM}–${entry.endHHMM}',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.textOnPrimary.withAlpha(200),
-                    fontSize: 9,
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  // Live status dot — only in live timetable mode
+                  if (showVenueStatus && entry.venueStatus != null) ...[
+                    Container(
+                      width: 7,
+                      height: 7,
+                      margin: const EdgeInsets.only(right: 3),
+                      decoration: BoxDecoration(
+                        color: _parseHex(entry.venueMarkerColor),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white54, width: 0.5),
+                      ),
+                    ),
+                  ],
+                  Text(
+                    '${entry.startHHMM}–${entry.endHHMM}',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textOnPrimary.withAlpha(200),
+                      fontSize: 9,
+                    ),
                   ),
-                ),
+                ]),
               ],
             ),
-            // Course name
+            // Row 2: Course name
             Text(
               entry.courseName,
               style: AppTypography.caption.copyWith(
@@ -406,7 +446,7 @@ class _EntryCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             const Spacer(),
-            // Lecturer name
+            // Row 3: Lecturer
             Text(
               entry.lecturerName,
               style: AppTypography.caption.copyWith(
@@ -416,33 +456,49 @@ class _EntryCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            // Venue + student group
-            Row(
-              children: [
-                if (entry.venueCode != null)
-                  Flexible(
-                    child: Text(
-                      entry.venueCode!,
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.textOnPrimary.withAlpha(200), fontSize: 9),
-                      overflow: TextOverflow.ellipsis,
+            // Row 4: Venue + group + optional navigate button
+            Row(children: [
+              Expanded(
+                child: Row(children: [
+                  if (entry.venueCode != null)
+                    Flexible(
+                      child: Text(
+                        entry.venueCode!,
+                        style: AppTypography.caption.copyWith(
+                            color: AppColors.textOnPrimary.withAlpha(200), fontSize: 9),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (entry.venueCode != null && entry.studentGroupName != null)
+                    Text(' · ',
+                        style: AppTypography.caption.copyWith(
+                            color: AppColors.textOnPrimary.withAlpha(160), fontSize: 9)),
+                  if (entry.studentGroupName != null)
+                    Flexible(
+                      child: Text(
+                        entry.studentGroupName!,
+                        style: AppTypography.caption.copyWith(
+                            color: AppColors.textOnPrimary.withAlpha(200), fontSize: 9),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ]),
+              ),
+              // Navigate-to-venue button — only shown when callback provided and venue has GPS
+              if (onNavigate != null && entry.hasVenueCoordinates)
+                GestureDetector(
+                  onTap: onNavigate,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 2),
+                    child: Icon(
+                      Icons.navigation_outlined,
+                      size: 11,
+                      color: AppColors.textOnPrimary.withAlpha(220),
                     ),
                   ),
-                if (entry.venueCode != null && entry.studentGroupName != null)
-                  Text(' · ',
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.textOnPrimary.withAlpha(160), fontSize: 9)),
-                if (entry.studentGroupName != null)
-                  Flexible(
-                    child: Text(
-                      entry.studentGroupName!,
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.textOnPrimary.withAlpha(200), fontSize: 9),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-              ],
-            ),
+                ),
+            ]),
           ],
         ),
       ),

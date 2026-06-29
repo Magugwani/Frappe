@@ -31,4 +31,40 @@ class AppColors {
   static const Color error = Color(0xFFC62828);
   static const Color success = Color(0xFF2E7D32);
   static const Color warning = Color(0xFFF57F17);
+
+  // ── Day-of-week chip colors (timetable / academic calendar) ───────────────
+  // Used by screens that render day-tagged content (teaching periods,
+  // timetable grids, schedules). Centralised so the palette can be tuned
+  // in one place instead of being duplicated per screen.
+  static const Color dayMonday = primary;            // soft sky blue
+  static const Color dayTuesday = accent;            // deeper blue
+  static const Color dayWednesday = Color(0xFF7B1FA2); // purple
+  static const Color dayThursday = statusInUse;      // orange
+  static const Color dayFriday = statusFree;         // green
+  static const Color daySaturday = Color(0xFF795548); // brown
+  static const Color daySunday = textSecondary;      // muted (campuses rarely teach Sundays)
+ 
+  /// Resolve a day-of-week label (`MONDAY`, `TUESDAY`, ... — case-insensitive)
+  /// to its chip colour. Returns [textSecondary] if the label is unknown.
+  static Color forDay(String dayName) {
+    switch (dayName.toUpperCase()) {
+      case 'MONDAY':
+        return dayMonday;
+      case 'TUESDAY':
+        return dayTuesday;
+      case 'WEDNESDAY':
+        return dayWednesday;
+      case 'THURSDAY':
+        return dayThursday;
+      case 'FRIDAY':
+        return dayFriday;
+      case 'SATURDAY':
+        return daySaturday;
+      case 'SUNDAY':
+        return daySunday;
+      default:
+        return textSecondary;
+    }
+  }
 }
+ 

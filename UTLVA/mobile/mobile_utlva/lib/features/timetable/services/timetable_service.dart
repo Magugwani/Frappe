@@ -335,4 +335,168 @@ class TimetableService {
         .timeout(const Duration(seconds: 15));
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
+
+  // ── Session lifecycle (SRS 3.2/3.4 — FR-26, FR-27, FR-29, FR-33, FR-35) ──
+
+  /// Lecturer confirms session is starting → venue BOOKED → IN_USE.
+  Future<Map<String, dynamic>> confirmSession(int entryId) async {
+    final r = await http
+        .post(Uri.parse('$_base/entries/$entryId/confirm/'), headers: await _headers())
+        .timeout(const Duration(seconds: 15));
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  /// Marks session as ended → venue IN_USE → FREE.
+  Future<Map<String, dynamic>> endSession(int entryId) async {
+    final r = await http
+        .post(Uri.parse('$_base/entries/$entryId/end-session/'), headers: await _headers())
+        .timeout(const Duration(seconds: 15));
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  /// SRS §3.12: Cancel a session — supports both BOOKED (pre-start) and
+  /// IN_USE (mid-session) venues. Students are notified automatically.
+  Future<Map<String, dynamic>> cancelSession(int entryId) async {
+    final r = await http
+        .post(Uri.parse('$_base/entries/$entryId/cancel/'), headers: await _headers())
+        .timeout(const Duration(seconds: 15));
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  /// FR-33/FR-35: Returns the SessionConfirmation status for a specific entry+date.
+  /// If [date] is null, uses today's date.
+  Future<Map<String, dynamic>> getConfirmationStatus(int entryId, {String? date}) async {
+    final q = date != null ? '?date=$date' : '';
+    final r = await http
+        .get(
+          Uri.parse('$_base/entries/$entryId/confirmation-status/$q'),
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    throw Exception('Failed to load confirmation status: ${r.statusCode}');
+  }
+
+  /// Postpone one occurrence to a new date/time/venue (FR-26, FR-27).
+  Future<Map<String, dynamic>> postponeSession({
+    required int entryId,
+    required String newDate,
+    required String newDayOfWeek,
+    required String newStartTime,
+    required String newEndTime,
+    required String reason,
+    int? newVenueId,
+  }) async {
+    final body = <String, dynamic>{
+      'new_date': newDate,
+      'new_day_of_week': newDayOfWeek,
+      'new_start_time': newStartTime,
+      'new_end_time': newEndTime,
+      'reason': reason,
+      if (newVenueId != null) 'new_venue': newVenueId,
+    };
+    final r = await http
+        .post(
+          Uri.parse('$_base/entries/$entryId/postpone/'),
+          headers: await _headers(),
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  /// FR-20: Returns courses assigned to the authenticated lecturer.
+  Future<List<dynamic>> getLecturerCourses() async {
+    final r = await http
+        .get(
+          Uri.parse('${AppConfig.baseUrl}/api/academics/lecturers/my-courses/'),
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) {
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      return data['courses'] as List<dynamic>? ?? [];
+    }
+    throw Exception('Failed to load courses: ${r.statusCode}');
+  }
+
+  // ── FR-42: Student view of approved emergency sessions ────────────────────
+
+  /// Returns APPROVED emergency sessions relevant to the authenticated student's
+  /// student group. Backend filters automatically based on the user's role.
+  Future<List<EmergencySession>> getStudentEmergencySessions() =>
+      getEmergencySessions();
+
+  // ── FR-37: Next upcoming class for the student ────────────────────────────
+
+  /// Returns the next PUBLISHED timetable entry for the student's group
+  /// occurring today or in future days of the current week.
+  Future<Map<String, dynamic>?> getNextClass({
+    required int programmeId,
+    int? studentGroupId,
+  }) async {
+    final params = ['programme=$programmeId', 'status=PUBLISHED'];
+    if (studentGroupId != null) params.add('student_group=$studentGroupId');
+    final r = await http
+        .get(Uri.parse('$_base/entries/?${params.join('&')}'), headers: await _headers())
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode != 200) return null;
+    final data = jsonDecode(r.body);
+    final list = data is List ? data : (data['results'] ?? data);
+    if ((list as List).isEmpty) return null;
+
+    // Days ordered Mon→Sat; pick the next upcoming entry relative to now
+    const dayOrder = {
+      'MONDAY': 0, 'TUESDAY': 1, 'WEDNESDAY': 2, 'THURSDAY': 3,
+      'FRIDAY': 4, 'SATURDAY': 5, 'SUNDAY': 6,
+    };
+    final now = DateTime.now();
+    final todayIdx = now.weekday - 1; // 0=Mon
+    final nowTime = now.hour * 60 + now.minute;
+
+    Map<String, dynamic>? best;
+    int bestScore = 99999;
+
+    for (final e in list) {
+      final entryMap = e as Map<String, dynamic>;
+      final dayStr = (entryMap['day_of_week'] as String?) ?? '';
+      final dayIdx = dayOrder[dayStr] ?? 99;
+      final timeParts = ((entryMap['start_time'] as String?) ?? '00:00').split(':');
+      final entryMins = int.parse(timeParts[0]) * 60 + int.parse(timeParts[1]);
+
+      // Score: how many minutes from now (across the week)
+      int score;
+      if (dayIdx > todayIdx) {
+        score = (dayIdx - todayIdx) * 1440 + entryMins;
+      } else if (dayIdx == todayIdx && entryMins > nowTime) {
+        score = entryMins - nowTime;
+      } else {
+        continue; // already passed
+      }
+      if (score < bestScore) { bestScore = score; best = entryMap; }
+    }
+    return best;
+  }
+
+  // ── System configuration (admin only) ─────────────────────────────────────
+
+  Future<Map<String, dynamic>> getSystemConfig() async {
+    final r = await http
+        .get(Uri.parse('${AppConfig.baseUrl}/api/system/config/'), headers: await _headers())
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    throw Exception('Failed to load system config');
+  }
+
+  Future<Map<String, dynamic>> updateSystemConfig(Map<String, dynamic> data) async {
+    final r = await http
+        .patch(
+          Uri.parse('${AppConfig.baseUrl}/api/system/config/'),
+          headers: await _headers(),
+          body: jsonEncode(data),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+    throw Exception(jsonDecode(r.body).toString());
+  }
 }

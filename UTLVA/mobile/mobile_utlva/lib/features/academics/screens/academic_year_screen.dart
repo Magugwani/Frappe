@@ -38,7 +38,7 @@ class _AcademicYearScreenState extends State<AcademicYearScreen> {
         backgroundColor: AppColors.secondary,
         foregroundColor: AppColors.textOnPrimary,
         title: const Text('Academic Years'),
-      ),
+      ),  
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add, color: AppColors.textOnPrimary),

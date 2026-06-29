@@ -37,6 +37,9 @@ dependencies:
   # External navigation / URL actions
   url_launcher: ^6.3.0
 
+  # File picker for CSV bulk upload (FR-52)
+  file_picker: ^8.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

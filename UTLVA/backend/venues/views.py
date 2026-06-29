@@ -192,13 +192,18 @@ class VenueViewSet(viewsets.ModelViewSet):
                 | Q(building__code__icontains=q)
             )
 
-        # Resource and accessibility filters (comma-separated)
+        # Resource filter: ?resources=projector,whiteboard (all must be present)
         required_resources = [
             r.strip() for r in p.get('resources', '').split(',') if r.strip()
         ]
+        # Accessibility filter: ?accessibility=wheelchair_access,hearing_loop
         required_accessibility = [
             a.strip() for a in p.get('accessibility', '').split(',') if a.strip()
         ]
+        # Shorthand: ?accessible=true → venue has at least one accessibility feature
+        if p.get('accessible', '').lower() == 'true':
+            qs = qs.exclude(accessibility=[])
+
         if required_resources or required_accessibility:
             ids = [
                 v.id for v in qs
@@ -207,6 +212,66 @@ class VenueViewSet(viewsets.ModelViewSet):
             ]
             qs = Venue.objects.select_related('building').filter(id__in=ids)
         return qs
+
+    @action(detail=True, methods=['get'], url_path='check-availability',
+            permission_classes=[IsAuthenticated])
+    def check_availability(self, request, pk=None):
+        """
+        GET /api/venues/venues/{id}/check-availability/
+            ?day_of_week=MONDAY&start_time=10:00:00&end_time=12:00:00&semester=1
+
+        Returns whether the venue is free at the given slot (FR-18).
+        Overlap rule: A_start < B_end AND A_end > B_start.
+        """
+        from timetable.models import TimetableEntry
+        venue = self.get_object()
+        p = request.query_params
+        day = p.get('day_of_week', '').upper()
+        start = p.get('start_time')
+        end   = p.get('end_time')
+
+        if not (day and start and end):
+            return Response(
+                {'detail': 'day_of_week, start_time and end_time are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        conflicts_qs = TimetableEntry.objects.filter(
+            venue=venue,
+            day_of_week=day,
+            start_time__lt=end,
+            end_time__gt=start,
+            status__in=['DRAFT', 'VALIDATED', 'PUBLISHED'],
+        ).select_related('course', 'lecturer__user')
+
+        semester_id = p.get('semester')
+        if semester_id:
+            conflicts_qs = conflicts_qs.filter(semester_id=semester_id)
+
+        is_available = not conflicts_qs.exists()
+        conflicts_data = [
+            {
+                'id': e.id,
+                'course_code': e.course.course_code,
+                'day': e.day_of_week,
+                'start': str(e.start_time),
+                'end': str(e.end_time),
+                'status': e.status,
+                'lecturer': e.lecturer.user.full_name if e.lecturer else None,
+            }
+            for e in conflicts_qs
+        ]
+
+        return Response({
+            'venue_id': venue.id,
+            'venue_code': venue.code,
+            'day_of_week': day,
+            'start_time': start,
+            'end_time': end,
+            'available': is_available,
+            'current_venue_status': venue.status,
+            'conflicts': conflicts_data,
+        })
 
     # ── Dashboard (map + summary) ──────────────────────────────────────────
     @action(detail=False, methods=['get'], url_path='dashboard',
@@ -405,6 +470,92 @@ class VenueViewSet(viewsets.ModelViewSet):
             'venue_code': venue.code,
             'count': len(affected),
             'affected_bookings': [b.to_dict() for b in affected],
+        })
+
+    @action(detail=True, methods=['post'], url_path='reassign-booking',
+            permission_classes=[IsSystemAdminOrCoordinator])
+    def reassign_booking(self, request, pk=None):
+        """
+        SRS §3.12 — Venue deactivation with future bookings.
+        POST /api/venues/venues/{id}/reassign-booking/
+        Body: {"entry_id": N, "new_venue_id": M}
+
+        Moves a TimetableEntry from this venue to new_venue, transitioning
+        venue statuses appropriately. Once all affected bookings are reassigned,
+        the coordinator can call /deactivate/ again.
+        """
+        from timetable.models import TimetableEntry, TimetableStatus
+        from venues.models import VenueStatus, TransitionEvent
+        from venues.services import VenueStateMachine
+
+        venue = self.get_object()
+        entry_id    = request.data.get('entry_id')
+        new_venue_id = request.data.get('new_venue_id')
+
+        if not entry_id or not new_venue_id:
+            return Response(
+                {'detail': 'Both entry_id and new_venue_id are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            entry = TimetableEntry.objects.select_related('venue', 'course').get(
+                pk=entry_id, venue=venue,
+            )
+        except TimetableEntry.DoesNotExist:
+            return Response({'detail': 'Entry not found for this venue.'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            new_venue = Venue.objects.get(pk=new_venue_id, is_active=True)
+        except Venue.DoesNotExist:
+            return Response({'detail': 'New venue not found or inactive.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if new_venue.status != VenueStatus.FREE:
+            return Response(
+                {'detail': f'New venue {new_venue.code} is not FREE (status: {new_venue.status}).'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Release old venue
+        if venue.status == VenueStatus.BOOKED:
+            try:
+                VenueStateMachine(venue).transition(
+                    to_status=VenueStatus.FREE,
+                    event=TransitionEvent.SESSION_CANCELLED,
+                    user=request.user,
+                    reason=f'Booking reassigned to {new_venue.code} (deactivation prep).',
+                    related_object_type='TimetableEntry',
+                    related_object_id=str(entry.id),
+                )
+            except Exception:
+                pass
+
+        # Book new venue
+        try:
+            VenueStateMachine(new_venue).transition(
+                to_status=VenueStatus.BOOKED,
+                event=TransitionEvent.TIMETABLE_ENTRY_CREATED,
+                user=request.user,
+                reason=f'Reassigned from {venue.code} during deactivation.',
+                related_object_type='TimetableEntry',
+                related_object_id=str(entry.id),
+            )
+        except Exception as exc:
+            return Response({'detail': f'Could not book new venue: {exc}'}, status=status.HTTP_409_CONFLICT)
+
+        # Update entry
+        entry.venue = new_venue
+        entry.save(update_fields=['venue'])
+
+        # Check if venue is now clear to deactivate
+        remaining = find_future_bookings(venue)
+        return Response({
+            'success': True,
+            'entry_id': entry.id,
+            'old_venue': venue.code,
+            'new_venue': new_venue.code,
+            'remaining_bookings': len(remaining),
+            'can_deactivate_now': len(remaining) == 0,
         })
 
     @action(detail=True, methods=['post'], url_path='reactivate',
