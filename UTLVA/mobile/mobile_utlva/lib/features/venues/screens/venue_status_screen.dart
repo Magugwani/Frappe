@@ -45,7 +45,7 @@ class _VenueStatusScreenState extends State<VenueStatusScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: 'Venue Status Monitor'),
+      appBar: CustomAppBar(title: 'Venue Status Monitor', showBackButton: true),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _error != null

@@ -40,6 +40,7 @@ class _SystemMonitorScreenState extends State<SystemMonitorScreen> {
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'System Monitor',
+        showBackButton: true,
         extraActions: [
           IconButton(icon: const Icon(Icons.refresh, color: AppColors.textOnPrimary), onPressed: _load),
         ],

@@ -90,6 +90,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Notifications',
+        showBackButton: true,
         actions: [
           if (unread > 0)
             TextButton(

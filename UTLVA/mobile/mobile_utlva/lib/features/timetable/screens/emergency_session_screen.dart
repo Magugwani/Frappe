@@ -60,7 +60,7 @@ class _EmergencySessionScreenState extends State<EmergencySessionScreen>
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: 'Emergency Sessions'),
+      appBar: CustomAppBar(title: 'Emergency Sessions', showBackButton: true),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.error,
         icon: const Icon(Icons.emergency_outlined, color: AppColors.textOnPrimary),

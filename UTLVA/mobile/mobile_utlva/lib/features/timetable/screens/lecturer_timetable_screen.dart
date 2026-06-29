@@ -125,6 +125,7 @@ class _LecturerTimetableScreenState extends State<LecturerTimetableScreen>
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'My Timetable',
+        showBackButton: true,
         extraActions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.textOnPrimary),
@@ -166,23 +167,23 @@ class _LecturerTimetableScreenState extends State<LecturerTimetableScreen>
           Container(
             color: AppColors.surface,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: [
-                _chip(_selectedYear?.name ?? 'All Years', Icons.calendar_today_outlined, AppColors.primary,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _chip(_selectedYear?.name ?? 'All Years', Icons.calendar_today_outlined, AppColors.statusBooked,
                     () => _showPicker<AcademicYear>('Academic Year', _years, _selectedYear, (y) { setState(() => _selectedYear = y); _loadEntries(); }, (y) => y.name)),
-                const SizedBox(width: 8),
-                _chip(_selectedSemester?.name ?? 'All Semesters', Icons.date_range_outlined, AppColors.accent,
+                _chip(_selectedSemester?.name ?? 'All Semesters', Icons.date_range_outlined, AppColors.statusBooked,
                     () => _showPicker<Semester>('Semester', _semesters, _selectedSemester, (s) { setState(() => _selectedSemester = s); _loadEntries(); }, (s) => s.name)),
-                const SizedBox(width: 8),
                 TextButton.icon(icon: const Icon(Icons.refresh, size: 16), label: const Text('Refresh'), onPressed: _loadEntries),
-              ]),
+              ],
             ),
           ),
           const Divider(height: 1),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                ? const Center(child: CircularProgressIndicator(color: AppColors.statusBooked))
                 : _entries.isEmpty
                     ? _buildEmpty()
                     : SingleChildScrollView(

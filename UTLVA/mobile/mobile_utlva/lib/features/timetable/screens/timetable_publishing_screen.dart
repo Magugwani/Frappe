@@ -96,7 +96,7 @@ class _TimetablePublishingScreenState extends State<TimetablePublishingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: 'Timetable Publishing'),
+      appBar: CustomAppBar(title: 'Timetable Publishing', showBackButton: true),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : SingleChildScrollView(

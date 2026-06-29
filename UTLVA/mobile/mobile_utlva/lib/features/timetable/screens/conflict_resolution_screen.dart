@@ -75,6 +75,7 @@ class _ConflictResolutionScreenState extends State<ConflictResolutionScreen>
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Conflict Resolution',
+        showBackButton: true,
         extraActions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.textOnPrimary),

@@ -89,6 +89,7 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Venue Map',
+        showBackButton: true,
         extraActions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.textOnPrimary),
@@ -211,12 +212,12 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
     return Container(
       color: AppColors.surface,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
             Text('${_filtered.length} venues', style: AppTypography.caption.copyWith(color: AppColors.textSecondary)),
-            const SizedBox(width: 12),
             ...filters.map((f) {
               final selected = _statusFilter == f;
               final color = f == 'ALL' ? AppColors.primary : _colorFor(f);
@@ -240,7 +241,6 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
             }),
           ],
         ),
-      ),
     );
   }
 
@@ -290,7 +290,8 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
             Text('Details'),
             SizedBox(width: 2),
             Icon(Icons.chevron_right, size: 16),
-          ]),
+          ],
+          ),
         ),
       ]),
     );

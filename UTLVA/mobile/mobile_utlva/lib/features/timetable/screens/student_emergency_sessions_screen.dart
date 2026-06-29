@@ -49,6 +49,7 @@ class _StudentEmergencySessionsScreenState
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Emergency Sessions',
+        showBackButton: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

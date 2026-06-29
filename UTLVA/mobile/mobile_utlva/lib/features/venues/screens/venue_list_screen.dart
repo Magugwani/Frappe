@@ -109,6 +109,7 @@ class _VenueListScreenState extends State<VenueListScreen> {
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Find a Venue',
+        showBackButton: true,
         extraActions: [
           IconButton(
             icon: const Icon(Icons.map_outlined, color: AppColors.textOnPrimary),
@@ -149,9 +150,10 @@ class _VenueListScreenState extends State<VenueListScreen> {
         ),
         const SizedBox(height: 8),
         // Filter row
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
             // Building filter
             _filterDropdown<int?>(
               'Building',
@@ -161,7 +163,6 @@ class _VenueListScreenState extends State<VenueListScreen> {
               (v) { setState(() => _selectedBuildingId = v); _search(); },
               120,
             ),
-            const SizedBox(width: 8),
             // Type filter
             _filterDropdown<String?>(
               'Type',
@@ -171,7 +172,6 @@ class _VenueListScreenState extends State<VenueListScreen> {
               (v) { setState(() => _selectedType = v); _search(); },
               130,
             ),
-            const SizedBox(width: 8),
             // Status filter
             _filterDropdown<String?>(
               'Status',
@@ -181,7 +181,7 @@ class _VenueListScreenState extends State<VenueListScreen> {
               (v) { setState(() => _selectedStatus = v); _search(); },
               110,
             ),
-          ]),
+          ],
         ),
         const SizedBox(height: 6),
         Row(children: [

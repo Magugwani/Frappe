@@ -278,10 +278,17 @@ class _StudentNotificationsBannerState
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 20),
-          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+      // Fixed height so Center has bounded constraints inside the dashboard Column.
+      // Center inside an unbounded Column (SingleChildScrollView child) causes
+      // "Cannot hit test a render box with no size" which freezes the whole screen.
+      return const SizedBox(
+        height: 80,
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+          ),
         ),
       );
     }

@@ -81,13 +81,13 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: CustomAppBar(title: 'Venue Detail'),
+        appBar: CustomAppBar(title: 'Venue Detail', showBackButton: true),
         body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
       );
     }
     if (_venue == null) {
       return Scaffold(
-        appBar: CustomAppBar(title: 'Venue Detail'),
+        appBar: CustomAppBar(title: 'Venue Detail', showBackButton: true),
         body: Center(child: Text('Venue not found.', style: AppTypography.bodyMedium)),
       );
     }
@@ -97,7 +97,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: v.code),
+      appBar: CustomAppBar(title: v.code, showBackButton: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(

@@ -82,6 +82,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Audit Logs',
+        showBackButton: true,
         extraActions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.textOnPrimary),
@@ -101,11 +102,10 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
     return Container(
       color: AppColors.surface,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: _actionOptions.map((opt) => Padding(
-          padding: const EdgeInsets.only(right: 6),
-          child: FilterChip(
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: _actionOptions.map((opt) => FilterChip(
             label: Text(opt.$1, style: AppTypography.caption.copyWith(
               color: _actionFilter == opt.$2 ? AppColors.primary : AppColors.textSecondary,
               fontWeight: _actionFilter == opt.$2 ? FontWeight.w700 : FontWeight.normal,
@@ -116,8 +116,8 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
             side: BorderSide(color: _actionFilter == opt.$2 ? AppColors.primary : AppColors.divider),
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.symmetric(horizontal: 4),
-          ),
-        )).toList()),
+        ),
+        ).toList(),
       ),
     );
   }

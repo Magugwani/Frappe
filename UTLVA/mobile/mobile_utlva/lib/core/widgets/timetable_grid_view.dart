@@ -445,7 +445,9 @@ class _EntryCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            const Spacer(),
+            // Spacer() replaced: Expanded inside mainAxisSize.min Column is
+            // contradictory and causes hit-test failures on live timetable.
+            const SizedBox(height: 2),
             // Row 3: Lecturer
             Text(
               entry.lecturerName,

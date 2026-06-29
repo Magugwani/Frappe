@@ -65,7 +65,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: 'Forgot Password'),
+      appBar: CustomAppBar(title: 'Forgot Password', showBackButton: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: _resetToken != null ? _buildDevTokenPanel() : _buildRequestForm(),

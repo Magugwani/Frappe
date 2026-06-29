@@ -119,12 +119,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(children: [
-            ..._roles.map((r) => Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilterChip(
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            ..._roles.map((r) => FilterChip(
                 label: Text(r.$1, style: AppTypography.labelMedium.copyWith(
                   color: _roleFilter == r.$2 ? AppColors.primary : AppColors.textSecondary,
                   fontWeight: _roleFilter == r.$2 ? FontWeight.w700 : FontWeight.normal,
@@ -135,8 +134,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 side: BorderSide(color: _roleFilter == r.$2 ? AppColors.primary : AppColors.divider),
                 visualDensity: VisualDensity.compact,
               ),
-            )),
-            const SizedBox(width: 8),
+            ),
             FilterChip(
               label: Text('Active Only', style: AppTypography.labelMedium.copyWith(
                 color: _activeFilter == true ? AppColors.statusFree : AppColors.textSecondary,
@@ -148,9 +146,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               side: BorderSide(color: _activeFilter == true ? AppColors.statusFree : AppColors.divider),
               visualDensity: VisualDensity.compact,
             ),
-          ]),
+          ],
         ),
-      ]),
+      ],
+      ),
     );
   }
 

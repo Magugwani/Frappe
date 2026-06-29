@@ -158,6 +158,7 @@ class _UniversityTimetableScreenState extends State<UniversityTimetableScreen> {
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: isLive ? 'Live Timetable' : 'Official Timetable',
+        showBackButton: true,
         extraActions: [
           if (isLive)
             IconButton(
@@ -188,25 +189,29 @@ class _UniversityTimetableScreenState extends State<UniversityTimetableScreen> {
   }
 
   Widget _buildFilterBar() {
+    // Wrap is used instead of SingleChildScrollView + Row because
+    // SingleChildScrollView(horizontal) absorbs pointer events on web/desktop,
+    // causing ActionChips to become unresponsive.
     return Container(
       color: AppColors.surface,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
           _filterChip<AcademicYear>(
             label: _selectedYear?.name ?? 'Year',
-            color: AppColors.primary,
+            color: AppColors.statusBooked,
             onTap: () => _showPicker<AcademicYear>(
               'Academic Year', _years, _selectedYear,
               (y) { setState(() => _selectedYear = y); _loadEntries(); },
               (y) => y.name,
             ),
           ),
-          const SizedBox(width: 8),
           _filterChip<Semester>(
             label: _selectedSemester?.name ?? 'Semester',
-            color: AppColors.accent,
+            color: AppColors.statusBooked,
             onTap: () => _showPicker<Semester>(
               'Semester',
               _semesters.where((s) =>
@@ -216,7 +221,6 @@ class _UniversityTimetableScreenState extends State<UniversityTimetableScreen> {
               (s) => s.name,
             ),
           ),
-          const SizedBox(width: 8),
           _filterChip<Programme?>(
             label: _selectedProgramme?.code ?? 'All Programmes',
             color: _selectedProgramme != null ? AppColors.statusBooked : AppColors.textSecondary,
@@ -228,14 +232,13 @@ class _UniversityTimetableScreenState extends State<UniversityTimetableScreen> {
               (p) => p.code,
             ),
           ),
-          const SizedBox(width: 8),
           TextButton.icon(
             icon: const Icon(Icons.refresh, size: 14),
             label: const Text('Load'),
             onPressed: _loadEntries,
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
           ),
-        ]),
+        ],
       ),
     );
   }
@@ -251,33 +254,35 @@ class _UniversityTimetableScreenState extends State<UniversityTimetableScreen> {
     return Container(
       color: AppColors.surface,
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          Text('Live venue status • ', style: AppTypography.caption.copyWith(color: AppColors.textSecondary)),
-          ..._liveLegend.map((item) => Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 8, height: 8,
-                  decoration: BoxDecoration(color: item.color, shape: BoxShape.circle)),
-              const SizedBox(width: 3),
-              Text(
-                '${item.label}${statusCounts.containsKey(item.label) ? ' (${statusCounts[item.label]})' : ''}',
-                style: AppTypography.caption.copyWith(fontSize: 10),
-              ),
-            ]),
-          )),
-          const SizedBox(width: 8),
-          Text('• tap  to navigate', style: AppTypography.caption.copyWith(color: AppColors.textSecondary, fontSize: 10)),
-          const Icon(Icons.navigation_outlined, size: 10, color: AppColors.textSecondary),
-        ]),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 2,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('Live venue status', style: AppTypography.caption.copyWith(color: AppColors.textSecondary)),
+          ..._liveLegend.map((item) => Row(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 8, height: 8,
+                decoration: BoxDecoration(color: item.color, shape: BoxShape.circle)),
+            const SizedBox(width: 3),
+            Text(
+              '${item.label}${statusCounts.containsKey(item.label) ? ' (${statusCounts[item.label]})' : ''}',
+              style: AppTypography.caption.copyWith(fontSize: 10),
+            ),
+          ])),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Text('tap  to navigate', style: AppTypography.caption.copyWith(color: AppColors.textSecondary, fontSize: 10)),
+            const Icon(Icons.navigation_outlined, size: 10, color: AppColors.textSecondary),
+          ]),
+        ],
       ),
     );
   }
 
   Widget _buildBody(bool isLive) {
     if (!_refLoaded || _loading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+      // AppColors.primary is sky blue — invisible against the light blue background.
+      // Use statusBooked (dark blue) so the spinner is clearly visible.
+      return const Center(child: CircularProgressIndicator(color: AppColors.statusBooked));
     }
     if (_entries.isEmpty) {
       return Center(
@@ -305,7 +310,7 @@ class _UniversityTimetableScreenState extends State<UniversityTimetableScreen> {
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           _buildSummaryChips(),
           const SizedBox(height: 12),
           TimetableGridView(

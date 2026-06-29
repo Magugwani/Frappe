@@ -109,7 +109,7 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: 'My Class Timetable'),
+      appBar: CustomAppBar(title: 'My Class Timetable', showBackButton: true),
       body: !_profileLoaded
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : Column(

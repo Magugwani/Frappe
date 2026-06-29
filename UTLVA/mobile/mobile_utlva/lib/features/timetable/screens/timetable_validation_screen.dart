@@ -78,7 +78,7 @@ class _TimetableValidationScreenState extends State<TimetableValidationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: 'Timetable Validation'),
+      appBar: CustomAppBar(title: 'Timetable Validation', showBackButton: true),
       body: _loading ? _buildLoading() : _buildBody(),
     );
   }

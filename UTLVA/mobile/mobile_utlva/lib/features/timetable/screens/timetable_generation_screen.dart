@@ -91,7 +91,7 @@ class _TimetableGenerationScreenState extends State<TimetableGenerationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CustomAppBar(title: 'Generate Timetable'),
+      appBar: CustomAppBar(title: 'Generate Timetable', showBackButton: true),
       body: _loading ? _buildLoading() : _buildBody(),
     );
   }

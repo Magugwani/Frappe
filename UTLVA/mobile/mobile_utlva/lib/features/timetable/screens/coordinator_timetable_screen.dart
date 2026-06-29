@@ -115,6 +115,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Timetable Management',
+        showBackButton: true,
         extraActions: [
           IconButton(
             icon: const Icon(Icons.fact_check_outlined, color: AppColors.textOnPrimary),
@@ -142,7 +143,7 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
           const Divider(height: 1),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                ? const Center(child: CircularProgressIndicator(color: AppColors.statusBooked))
                 : _entries.isEmpty
                     ? _buildEmpty()
                     : SingleChildScrollView(
@@ -169,9 +170,10 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
     return Container(
       color: AppColors.surface,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
+      child: Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _FilterDropdown<AcademicYear>(
               label: 'Year',
@@ -183,7 +185,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
                 _loadEntries();
               },
             ),
-            const SizedBox(width: 10),
             _FilterDropdown<Semester>(
               label: 'Semester',
               value: _selectedSemester,
@@ -194,7 +195,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
                 _loadEntries();
               },
             ),
-            const SizedBox(width: 10),
             _FilterDropdown<Programme>(
               label: 'Programme',
               value: _selectedProgramme,
@@ -206,7 +206,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
                 _loadEntries();
               },
             ),
-            const SizedBox(width: 10),
             TextButton.icon(
               icon: const Icon(Icons.refresh, size: 16),
               label: const Text('Reload'),
@@ -214,7 +213,6 @@ class _CoordinatorTimetableScreenState extends State<CoordinatorTimetableScreen>
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -548,7 +546,6 @@ class _EntryFormState extends State<_EntryForm> {
               widget.years.map((y) => DropdownMenuItem(value: y.id, child: Text(y.name))).toList(),
               (v) => setState(() { _yearId = v; _semId = null; }),
             )),
-            const SizedBox(width: 10),
             Expanded(child: _dd<int?>(
               'Semester *', _semId,
               semItems.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(),
@@ -568,7 +565,6 @@ class _EntryFormState extends State<_EntryForm> {
                 _groupId = null;
               }),
             )),
-            const SizedBox(width: 10),
             Expanded(child: _dd<int?>(
               'Student Group', _groupId,
               [
@@ -616,7 +612,6 @@ class _EntryFormState extends State<_EntryForm> {
               _times.map((t) => DropdownMenuItem(value: t, child: Text(_hm(t)))).toList(),
               (v) => setState(() { _startTime = v!; _recommendations = null; }),
             )),
-            const SizedBox(width: 10),
             Expanded(child: _dd<String>(
               'End Time', _endTime,
               _times.map((t) => DropdownMenuItem(value: t, child: Text(_hm(t)))).toList(),
@@ -646,7 +641,6 @@ class _EntryFormState extends State<_EntryForm> {
                 },
               ),
             ),
-            const SizedBox(width: 10),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
               icon: _loadingRecommendations
